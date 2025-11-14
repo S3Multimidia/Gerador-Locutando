@@ -1,0 +1,7 @@
+{
+  "name": "Locutando - Gerador de Locuções",
+  "description": "Uma aplicação web que converte texto em locuções com vozes selecionáveis e permite a mixagem com trilhas sonoras, utilizando a API Text-to-Speech do Google Gemini.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
