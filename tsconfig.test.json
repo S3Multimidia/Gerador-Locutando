@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./dist-tests",
+    "rootDir": "./",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "target": "ES2022",
+    "allowImportingTsExtensions": false
+  },
+  "include": [
+    "audio-utils.ts",
+    "__tests__/**/*.ts"
+  ]
+}
