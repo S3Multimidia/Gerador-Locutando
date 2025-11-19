@@ -1,16 +1,18 @@
 
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Header } from './components/Header';
 import { VoiceGenerator } from './components/VoiceGenerator';
 import { AudioResult } from './components/AudioResult';
 import { Mixer } from './components/Mixer';
 import { AudioRecorder } from './components/AudioRecorder';
+import { ChatAgent } from './components/ChatAgent';
 import { FinalResultCard } from './components/FinalResultCard';
+import { AdminPanel } from './components/AdminPanel';
 import type { Voice } from './types';
-import { AVAILABLE_VOICES, DEFAULT_BACKGROUND_TRACK_URL } from './constants';
-import { UserIcon, KeyIcon, ChevronRightIcon, CheckCircleIcon, ShieldIcon, LoadingSpinner } from './components/IconComponents';
+import { INITIAL_VOICES, INITIAL_BACKGROUND_TRACKS } from './constants';
+import { UserIcon, KeyIcon, ChevronRightIcon, CheckCircleIcon, LoadingSpinner, ArrowLeftIcon } from './components/IconComponents';
 
 // #region UTILITY FUNCTIONS
 // Helper to decode base64 string to Uint8Array
@@ -43,27 +45,62 @@ async function decodeAudioData(
   }
   return buffer;
 }
+
+// Helper to fetch with retries for more robust network requests
+async function fetchWithRetry(url: string, retries = 3, delay = 500): Promise<Response> {
+    for (let i = 0; i < retries; i++) {
+        try {
+            // Explicitly set mode and cache policy for robustness
+            const response = await fetch(url, { mode: 'cors', cache: 'no-cache' });
+            if (response.ok) {
+                return response;
+            }
+            // Don't retry on client errors like 404, as the resource likely doesn't exist
+            if (response.status >= 400 && response.status < 500) {
+                 throw new Error(`Client error: ${response.status} ${response.statusText} for url ${url}`);
+            }
+             // For server errors, retry
+             throw new Error(`Server error: ${response.status} ${response.statusText} for url ${url}`);
+        } catch (e) {
+            if (i === retries - 1) throw e; // last attempt failed, re-throw
+            console.warn(`Attempt ${i + 1} failed for ${url}. Retrying in ${delay * (i + 1)}ms...`);
+            await new Promise(res => setTimeout(res, delay * (i + 1)));
+        }
+    }
+    // This line is technically unreachable due to the throw in the loop, but satisfies TypeScript
+    throw new Error(`Failed to fetch ${url} after ${retries} attempts`);
+}
 // #endregion
 
 type Page = 'login' | 'pricing' | 'dashboard' | 'admin';
 type Role = 'user' | 'admin';
 export type IntonationStyle = 'auto' | 'retail';
+export type TrackInfo = { name: string, url: string };
+
 
 // ============================================================================
 // #region DASHBOARD COMPONENT (The Core Voice Generation App)
 // ============================================================================
-const Dashboard: React.FC = () => {
-  const [text, setText] = useState<string>('Bem-vindo ao Locutando! O seu gerador de locuções com inteligência artificial.');
-  const [suggestedText, setSuggestedText] = useState<string>('');
-  const [selectedVoice, setSelectedVoice] = useState<Voice>(AVAILABLE_VOICES[0]);
+interface DashboardProps {
+    availableVoices: Voice[];
+    backgroundTracks: TrackInfo[];
+    ttsModel: string;
+    chatModel: string;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ availableVoices, backgroundTracks, ttsModel, chatModel }) => {
+  const [activeStage, setActiveStage] = useState<'chat' | 'generate'>('chat');
+  const [text, setText] = useState<string>('');
+  const [selectedVoice, setSelectedVoice] = useState<Voice>(availableVoices[0]);
   const [intonationStyle, setIntonationStyle] = useState<IntonationStyle>('auto');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isTurboLoading, setIsTurboLoading] = useState<boolean>(false);
-  const [isSuggestingText, setIsSuggestingText] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [generatedAudio, setGeneratedAudio] = useState<AudioBuffer | null>(null);
   const [finalMixedAudio, setFinalMixedAudio] = useState<AudioBuffer | null>(null);
   const [activeTab, setActiveTab] = useState<'generate' | 'record'>('generate');
+  const mixerRef = useRef<HTMLDivElement>(null);
+  
   const [audioContext] = useState<AudioContext | null>(() => {
     if (typeof window !== 'undefined') {
         const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -72,42 +109,64 @@ const Dashboard: React.FC = () => {
     return null;
   });
 
-  const handleSuggestText = useCallback(async (originalText: string) => {
-    if (!process.env.API_KEY) {
-      setError("Chave de API não encontrada.");
-      return;
+  const [preloadedTracks, setPreloadedTracks] = useState<{name: string, buffer: AudioBuffer}[]>([]);
+  const [defaultBackgroundTrack, setDefaultBackgroundTrack] = useState<AudioBuffer | null>(null);
+  const [isDefaultTrackLoading, setIsDefaultTrackLoading] = useState<boolean>(true);
+  const chatHistoryRef = useRef<any[]>([]);
+  
+  // When available voices change (from admin panel), update selected voice if it's no longer valid
+  useEffect(() => {
+    if (availableVoices.length > 0) {
+      const isSelectedVoiceAvailable = availableVoices.some(v => v.id === selectedVoice?.id);
+      if (!isSelectedVoiceAvailable) {
+        setSelectedVoice(availableVoices[0]);
+      }
+    } else {
+        setSelectedVoice(null as any); // Clear if no voices are available
     }
-    if (!originalText.trim()) {
-      setError("Por favor, insira um texto para gerar uma sugestão.");
-      return;
-    }
+  }, [availableVoices, selectedVoice]);
 
-    setIsSuggestingText(true);
-    setSuggestedText('');
-    setError(null);
 
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Você é um copywriter publicitário sênior. Sua tarefa é reescrever o texto a seguir para que seja mais impactante, claro e persuasivo, ideal para uma locução. Mantenha a mensagem central e o significado, mas aprimore o estilo e a fluidez. O tom deve ser profissional e envolvente. Não adicione nenhuma introdução ou comentário, apenas o texto reescrito.\n\nTexto Original:\n---\n${originalText}`;
+  useEffect(() => {
+    if (!audioContext) return;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
-        contents: prompt,
-      });
-      
-      const newText = response.text.trim();
-      setSuggestedText(newText);
-    } catch (err) {
-      console.error("Erro ao sugerir texto:", err);
-      let errorMessage = "Ocorreu um erro desconhecido ao gerar a sugestão.";
-       if (err instanceof Error) {
-           errorMessage = err.message;
-       }
-      setError(`Falha ao sugerir texto: ${errorMessage}`);
-    } finally {
-      setIsSuggestingText(false);
-    }
-  }, []);
+    const loadDefaultTracks = async () => {
+        setIsDefaultTrackLoading(true);
+        setError(null);
+        try {
+            const trackPromises = backgroundTracks.map(async (track) => {
+                try {
+                    const response = await fetchWithRetry(track.url);
+                    const arrayBuffer = await response.arrayBuffer();
+                    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    return { name: track.name, buffer: audioBuffer };
+                } catch (e) {
+                    console.warn(`Could not load track '${track.name}':`, e);
+                    return null;
+                }
+            });
+
+            const loadedTracks = (await Promise.all(trackPromises)).filter(Boolean) as {name: string, buffer: AudioBuffer}[];
+            
+            setPreloadedTracks(loadedTracks);
+
+            if (loadedTracks.length > 0) {
+                setDefaultBackgroundTrack(loadedTracks[0].buffer);
+            } else {
+                 setError("Nenhuma trilha sonora padrão foi carregada. O Modo Turbo estará indisponível.");
+                 setDefaultBackgroundTrack(null);
+            }
+        } catch (e) {
+            console.error("Unexpected error loading default background tracks:", e);
+            setError("Ocorreu um erro inesperado ao carregar as trilhas sonoras. Por favor, recarregue a página.");
+            setDefaultBackgroundTrack(null);
+        } finally {
+            setIsDefaultTrackLoading(false);
+        }
+    };
+
+    loadDefaultTracks();
+  }, [audioContext, backgroundTracks]);
 
   const handleGenerateSpeech = useCallback(async (voiceToUse: Voice, textToUse: string) => {
     if (!process.env.API_KEY) {
@@ -127,10 +186,9 @@ const Dashboard: React.FC = () => {
       const finalText = intonationStyle === 'retail' ? `${RETAIL_PROMPT}${textToUse}` : textToUse;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
+        model: ttsModel,
         contents: [{ parts: [{ text: finalText }] }],
         config: {
-          temperature: 1.35,
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: {
@@ -161,9 +219,13 @@ const Dashboard: React.FC = () => {
       setError(`Falha ao gerar áudio: ${errorMessage}`);
       return null;
     }
-  }, [audioContext, intonationStyle]);
+  }, [audioContext, intonationStyle, ttsModel]);
   
   const handleExpertGenerate = async (textToUse: string) => {
+      if (!selectedVoice) {
+        setError("Nenhuma voz selecionada. Adicione uma voz no painel de administração.");
+        return;
+      }
       setIsLoading(true);
       setError(null);
       setGeneratedAudio(null);
@@ -177,60 +239,73 @@ const Dashboard: React.FC = () => {
   };
 
   const handleTurboGenerate = async (textToUse: string) => {
-      setIsTurboLoading(true);
-      setError(null);
-      setGeneratedAudio(null);
-      setFinalMixedAudio(null);
-
-      const [voiceBuffer, backgroundBuffer] = await Promise.all([
-          handleGenerateSpeech(selectedVoice, textToUse),
-          fetch(DEFAULT_BACKGROUND_TRACK_URL)
-              .then(res => res.arrayBuffer())
-              .then(ab => audioContext!.decodeAudioData(ab))
-              .catch(e => {
-                  console.error("Error fetching background track:", e);
-                  setError("Falha ao carregar a trilha sonora padrão.");
-                  return null;
-              })
-      ]);
-
-      if (!voiceBuffer || !backgroundBuffer) {
-          setIsTurboLoading(false);
-          return;
-      }
-
-      // Offline Mixing Logic
-      try {
-          const startPad = 3.0;
-          const endPad = 3.0;
-          const backgroundVolume = 0.4;
-          const outputDuration = startPad + voiceBuffer.duration + endPad;
-
-          const offlineCtx = new OfflineAudioContext(2, Math.ceil(audioContext!.sampleRate * outputDuration), audioContext!.sampleRate);
-          
-          // Voice Source
-          const voiceSource = offlineCtx.createBufferSource();
-          voiceSource.buffer = voiceBuffer;
-          voiceSource.connect(offlineCtx.destination);
-          voiceSource.start(startPad);
-
-          // Background Source
-          const bgSource = offlineCtx.createBufferSource();
-          bgSource.buffer = backgroundBuffer;
-          const bgGain = offlineCtx.createGain();
-          bgGain.gain.value = backgroundVolume;
-          bgSource.connect(bgGain);
-          bgGain.connect(offlineCtx.destination);
-          bgSource.start(0);
-
-          const mixedBuffer = await offlineCtx.startRendering();
-          setFinalMixedAudio(mixedBuffer);
-      } catch (e) {
-          console.error("Error during offline mixing:", e);
-          setError("Ocorreu um erro ao mixar o áudio no Modo Turbo.");
-      } finally {
-          setIsTurboLoading(false);
-      }
+    if (!selectedVoice) {
+        setError("Nenhuma voz selecionada. Adicione uma voz no painel de administração.");
+        return;
+    }
+    setIsTurboLoading(true);
+    setError(null);
+    setGeneratedAudio(null);
+    setFinalMixedAudio(null);
+  
+    if (isDefaultTrackLoading) {
+      setError("Aguarde, a trilha sonora padrão está sendo carregada...");
+      setIsTurboLoading(false);
+      return;
+    }
+  
+    if (!defaultBackgroundTrack) {
+      setError("Não foi possível carregar a trilha sonora padrão. O Modo Turbo está indisponível.");
+      setIsTurboLoading(false);
+      return;
+    }
+  
+    const [voiceBuffer, backgroundBuffer] = await Promise.all([
+      handleGenerateSpeech(selectedVoice, textToUse),
+      Promise.resolve(defaultBackgroundTrack),
+    ]);
+  
+    if (!voiceBuffer) {
+      setIsTurboLoading(false);
+      return;
+    }
+  
+    // Offline Mixing Logic
+    try {
+      const startPad = 3.0;
+      const endPad = 3.0;
+      const backgroundVolume = 0.4;
+      const outputDuration = startPad + voiceBuffer.duration + endPad;
+  
+      const offlineCtx = new OfflineAudioContext(
+        2,
+        Math.ceil(audioContext!.sampleRate * outputDuration),
+        audioContext!.sampleRate
+      );
+  
+      // Voice Source
+      const voiceSource = offlineCtx.createBufferSource();
+      voiceSource.buffer = voiceBuffer;
+      voiceSource.connect(offlineCtx.destination);
+      voiceSource.start(startPad);
+  
+      // Background Source
+      const bgSource = offlineCtx.createBufferSource();
+      bgSource.buffer = backgroundBuffer;
+      const bgGain = offlineCtx.createGain();
+      bgGain.gain.value = backgroundVolume;
+      bgSource.connect(bgGain);
+      bgGain.connect(offlineCtx.destination);
+      bgSource.start(0);
+  
+      const mixedBuffer = await offlineCtx.startRendering();
+      setFinalMixedAudio(mixedBuffer);
+    } catch (e) {
+      console.error("Error during offline mixing:", e);
+      setError("Ocorreu um erro ao mixar o áudio no Modo Turbo.");
+    } finally {
+      setIsTurboLoading(false);
+    }
   };
   
   const handleRecordingComplete = useCallback((audioBuffer: AudioBuffer | null) => {
@@ -241,11 +316,56 @@ const Dashboard: React.FC = () => {
     }
   }, []);
 
+  const handleScriptFinalized = useCallback((finalText: string, suggestedStyle: IntonationStyle, history: any[]) => {
+      setText(finalText);
+      setIntonationStyle(suggestedStyle);
+      chatHistoryRef.current = history;
+      setActiveStage('generate');
+  }, []);
+
+  const handleStageNavigation = (stage: 'chat' | 'generate' | 'mix') => {
+      if (stage === 'mix') {
+        setActiveStage('generate');
+        // Scroll to mixer after a short delay to allow rendering
+        setTimeout(() => {
+            mixerRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      } else {
+        setActiveStage(stage);
+      }
+  };
+
   return (
     <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
+      <div className="bg-white/80 backdrop-blur-md p-4 rounded-xl shadow-md border border-gray-200 mb-8 sticky top-20 z-10">
+        <div className="flex items-center justify-center space-x-4 sm:space-x-8">
+            <button onClick={() => handleStageNavigation('chat')} className={`font-semibold transition-colors px-4 py-2 rounded-lg ${activeStage === 'chat' ? 'bg-red-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                1. Assistente de Roteiro
+            </button>
+            <button onClick={() => handleStageNavigation('generate')} className={`font-semibold transition-colors px-4 py-2 rounded-lg ${activeStage === 'generate' ? 'bg-red-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100'}`}>
+                2. Narração
+            </button>
+            <button onClick={() => handleStageNavigation('mix')} disabled={!generatedAudio} className={`font-semibold transition-colors px-4 py-2 rounded-lg ${'disabled:opacity-50 disabled:cursor-not-allowed'} ${activeStage === 'generate' && generatedAudio ? 'text-gray-600 hover:bg-gray-100' : 'text-gray-600'}`}>
+                3. Produção
+            </button>
+        </div>
+      </div>
+    
+      {activeStage === 'chat' && (
+        <div className="animate-fade-in">
+          <ChatAgent 
+            onScriptFinalized={handleScriptFinalized}
+            initialText={text}
+            initialHistory={chatHistoryRef.current}
+            chatModel={chatModel}
+          />
+        </div>
+      )}
+
+      {activeStage === 'generate' && (
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start animate-fade-in">
         <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-lg border border-gray-200">
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">1. Crie sua Locução</h2>
+            <h2 className="text-3xl font-bold text-gray-800 mb-4">Crie sua Locução</h2>
           
            {/* Tab Navigation */}
           <div className="mb-6">
@@ -281,18 +401,16 @@ const Dashboard: React.FC = () => {
                <VoiceGenerator
                 text={text}
                 setText={setText}
-                suggestedText={suggestedText}
-                setSuggestedText={setSuggestedText}
+                availableVoices={availableVoices}
                 selectedVoice={selectedVoice}
                 setSelectedVoice={setSelectedVoice}
                 intonationStyle={intonationStyle}
                 setIntonationStyle={setIntonationStyle}
                 isLoading={isLoading}
                 isTurboLoading={isTurboLoading}
-                isSuggestingText={isSuggestingText}
-                onSuggestText={handleSuggestText}
                 onGenerateExpert={handleExpertGenerate}
                 onGenerateTurbo={handleTurboGenerate}
+                ttsModel={ttsModel}
               />
             )}
             {activeTab === 'record' && audioContext && (
@@ -335,7 +453,7 @@ const Dashboard: React.FC = () => {
                 <AudioResult audioBuffer={generatedAudio} audioContext={audioContext} />
               </div>
             
-               <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-lg border border-gray-200 animate-fade-in" style={{ animationDelay: '150ms' }}>
+               <div ref={mixerRef} className="bg-white p-6 sm:p-8 rounded-2xl shadow-lg border border-gray-200 animate-fade-in" style={{ animationDelay: '150ms' }}>
                  <h2 className="text-3xl font-bold text-gray-800 mb-6">3. Mixagem <span className="text-base font-normal text-gray-500">(Opcional)</span></h2>
                   <p className="text-base text-gray-600 mb-4">
                     Aprimore sua locução com tratamentos de áudio e adicione uma trilha sonora para um resultado profissional.
@@ -344,12 +462,15 @@ const Dashboard: React.FC = () => {
                    generatedAudio={generatedAudio}
                    audioContext={audioContext}
                    setGeneratedAudio={setGeneratedAudio}
+                   preloadedTracks={preloadedTracks}
+                   isDefaultTrackLoading={isDefaultTrackLoading}
                  />
                </div>
             </>
           )}
         </div>
       </div>
+      )}
     </main>
   );
 };
@@ -362,12 +483,20 @@ const Dashboard: React.FC = () => {
 const LoginPage: React.FC<{ onLogin: (role: Role) => void; onNavigate: (page: Page) => void; }> = ({ onLogin, onNavigate }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate role-based login for demonstration
-    const role = email.toLowerCase() === 'admin@admin.com' && password === 'mudar@123' ? 'admin' : 'user';
-    onLogin(role);
+    setError(null);
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (cleanEmail === 'admin@admin.com' && password === 'mudar@123') {
+        onLogin('admin');
+    } else if (cleanEmail === 'cliente@cliente.com' && password === 'locutando') {
+        onLogin('user');
+    } else {
+        setError('E-mail ou senha inválidos.');
+    }
   };
   
   return (
@@ -378,12 +507,17 @@ const LoginPage: React.FC<{ onLogin: (role: Role) => void; onNavigate: (page: Pa
             <h2 className="text-3xl font-bold text-gray-800">Acesse sua Conta</h2>
             <p className="text-gray-500 mt-2">Bem-vindo de volta! Faça login para continuar.</p>
           </div>
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 text-red-700 border border-red-200 rounded-lg text-center text-sm">
+                {error}
+            </div>
+          )}
           <form onSubmit={handleLoginSubmit} className="space-y-6">
             <div className="relative">
               <UserIcon className="w-5 h-5 text-gray-400 absolute top-1/2 left-4 transform -translate-y-1/2" />
               <input
                 type="email"
-                placeholder="E-mail (use admin@admin.com for admin)"
+                placeholder="E-mail"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -394,7 +528,7 @@ const LoginPage: React.FC<{ onLogin: (role: Role) => void; onNavigate: (page: Pa
               <KeyIcon className="w-5 h-5 text-gray-400 absolute top-1/2 left-4 transform -translate-y-1/2" />
               <input
                 type="password"
-                placeholder="Senha (use mudar@123 for admin)"
+                placeholder="Senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -409,6 +543,11 @@ const LoginPage: React.FC<{ onLogin: (role: Role) => void; onNavigate: (page: Pa
               <ChevronRightIcon className="w-5 h-5 ml-2" />
             </button>
           </form>
+          <div className="text-center mt-6 text-sm text-gray-500 bg-gray-100 p-3 rounded-lg border">
+            <p className="font-semibold">Para testar:</p>
+            <p>Admin: <span className="font-mono">admin@admin.com</span> / <span className="font-mono">mudar@123</span></p>
+            <p>Usuário: <span className="font-mono">cliente@cliente.com</span> / <span className="font-mono">locutando</span></p>
+          </div>
           <div className="text-center mt-6 text-sm">
             <p className="text-gray-600">
               Não tem uma conta?{' '}
@@ -506,67 +645,26 @@ const PricingPage: React.FC<{ onNavigate: (page: Page) => void; }> = ({ onNaviga
 };
 // #endregion
 
-// ============================================================================
-// #region ADMIN PANEL COMPONENT
-// ============================================================================
-const AdminPanel: React.FC = () => {
-    const users = [
-        { id: 1, name: 'Alice', email: 'alice@example.com', plan: 'Profissional', status: 'Ativo' },
-        { id: 2, name: 'Bob', email: 'bob@example.com', plan: 'Básico', status: 'Ativo' },
-        { id: 3, name: 'Charlie', email: 'charlie@example.com', plan: 'Profissional', status: 'Inativo' },
-    ];
-    return (
-        <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-            <div className="flex items-center mb-8">
-                <ShieldIcon className="w-8 h-8 text-red-600 mr-3" />
-                <h2 className="text-4xl font-extrabold text-gray-900">Painel Administrativo</h2>
-            </div>
-            <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-lg border border-gray-200">
-                <h3 className="text-2xl font-bold text-gray-800 mb-6">Gerenciar Usuários e Assinaturas</h3>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">E-mail</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plano</th>
-                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {users.map(user => (
-                                <tr key={user.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{user.name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.email}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.plan}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${user.status === 'Ativo' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                            {user.status}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </main>
-    );
-};
-// #endregion
 
 // ============================================================================
 // #region MAIN APP COMPONENT (ROUTER)
 // ============================================================================
 const App: React.FC = () => {
-  const [page, setPage] = useState<Page>('dashboard');
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
-  const [userRole, setUserRole] = useState<Role | null>('user');
+  const [page, setPage] = useState<Page>('login');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [userRole, setUserRole] = useState<Role | null>(null);
+
+  // Centralized state for dynamic content
+  const [availableVoices, setAvailableVoices] = useState<Voice[]>(INITIAL_VOICES);
+  const [backgroundTracks, setBackgroundTracks] = useState<TrackInfo[]>(INITIAL_BACKGROUND_TRACKS);
+  const [ttsModel, setTtsModel] = useState<string>('gemini-2.5-flash-preview-tts');
+  const [chatModel, setChatModel] = useState<string>('gemini-2.5-pro');
+
 
   const handleLogin = (role: Role) => {
     setIsAuthenticated(true);
     setUserRole(role);
-    setPage('dashboard');
+    setPage(role === 'admin' ? 'admin' : 'dashboard');
   };
 
   const handleLogout = () => {
@@ -579,6 +677,11 @@ const App: React.FC = () => {
     // Prevent navigating to protected routes if not authenticated
     if (!isAuthenticated && (newPage === 'dashboard' || newPage === 'admin')) {
       setPage('login');
+      return;
+    }
+     // Redirect user from admin page if they are not admin
+    if (isAuthenticated && userRole !== 'admin' && newPage === 'admin') {
+      setPage('dashboard');
       return;
     }
     setPage(newPage);
@@ -598,11 +701,31 @@ const App: React.FC = () => {
     // Authenticated routes
     switch (page) {
       case 'admin':
-        // Simple guard to prevent non-admins from seeing the admin panel
-        return userRole === 'admin' ? <AdminPanel /> : <Dashboard />;
+        return userRole === 'admin' ? (
+            <AdminPanel
+                voices={availableVoices}
+                setVoices={setAvailableVoices}
+                tracks={backgroundTracks}
+                setTracks={setBackgroundTracks}
+                ttsModel={ttsModel}
+                setTtsModel={setTtsModel}
+                chatModel={chatModel}
+                setChatModel={setChatModel}
+            />
+        ) : <Dashboard 
+                availableVoices={availableVoices} 
+                backgroundTracks={backgroundTracks} 
+                ttsModel={ttsModel}
+                chatModel={chatModel}
+            />;
       case 'dashboard':
       default:
-        return <Dashboard />;
+        return <Dashboard 
+                availableVoices={availableVoices} 
+                backgroundTracks={backgroundTracks} 
+                ttsModel={ttsModel}
+                chatModel={chatModel}
+               />;
     }
   };
 

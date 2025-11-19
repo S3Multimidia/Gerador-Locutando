@@ -2,25 +2,22 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { Voice } from '../types';
-import { AVAILABLE_VOICES } from '../constants';
-import { PlayIcon, SparklesIcon, LoadingSpinner, MicIcon, CheckIcon, PauseIcon } from './IconComponents';
+import { PlayIcon, LoadingSpinner, CheckIcon, PauseIcon } from './IconComponents';
 import type { IntonationStyle } from '../App';
 
 interface VoiceGeneratorProps {
   text: string;
   setText: (text: string) => void;
-  suggestedText: string;
-  setSuggestedText: (text: string) => void;
+  availableVoices: Voice[];
   selectedVoice: Voice;
   setSelectedVoice: (voice: Voice) => void;
   intonationStyle: IntonationStyle;
   setIntonationStyle: (style: IntonationStyle) => void;
   isLoading: boolean;
   isTurboLoading: boolean;
-  isSuggestingText: boolean;
-  onSuggestText: (originalText: string) => void;
   onGenerateExpert: (textToUse: string) => void;
   onGenerateTurbo: (textToUse: string) => void;
+  ttsModel: string;
 }
 
 const MAX_CHARS = 2000;
@@ -28,16 +25,13 @@ const MAX_CHARS = 2000;
 export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
   text,
   setText,
-  suggestedText,
-  setSuggestedText,
+  availableVoices,
   selectedVoice,
   setSelectedVoice,
   intonationStyle,
   setIntonationStyle,
   isLoading,
   isTurboLoading,
-  isSuggestingText,
-  onSuggestText,
   onGenerateExpert,
   onGenerateTurbo,
 }) => {
@@ -85,12 +79,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
     }
   };
   
-  const handleUseSuggestedText = () => {
-    setText(suggestedText);
-    setSuggestedText('');
-  }
-
-  const anyLoading = isLoading || isTurboLoading || isSuggestingText;
+  const anyLoading = isLoading || isTurboLoading;
 
   return (
     <div className="space-y-6">
@@ -117,8 +106,9 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-3">Voz</label>
         <div className="flex space-x-4 overflow-x-auto pb-4 -mb-4">
-          {AVAILABLE_VOICES.map((voice) => {
-             const isSelected = selectedVoice.id === voice.id;
+          {availableVoices.length > 0 ? (
+            availableVoices.map((voice) => {
+             const isSelected = selectedVoice?.id === voice.id;
              return (
                 <div key={voice.id} className={`relative flex-shrink-0 w-48 bg-gray-800 rounded-xl shadow-lg border-2 transition-all ${isSelected ? 'border-red-500' : 'border-transparent'}`}>
                   <div style={{ backgroundImage: `url(${voice.imageUrl})` }} aria-label={voice.displayName} className="w-full h-48 bg-cover bg-center rounded-t-lg" />
@@ -138,7 +128,13 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
                   </div>
                 </div>
              )
-          })}
+          })
+          ) : (
+             <div className="text-center w-full py-8 bg-gray-50 rounded-lg border border-dashed">
+                <p className="text-gray-600">Nenhuma voz de IA disponível.</p>
+                <p className="text-sm text-gray-500 mt-1">Um administrador precisa adicionar vozes no painel.</p>
+            </div>
+          )}
         </div>
       </div>
       
@@ -151,36 +147,17 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
          <p className="text-xs text-gray-500 mt-2">A opção "Ofertas Varejo" cria uma voz animada, ideal para anúncios e promoções.</p>
       </div>
 
-      <div className="space-y-3 pt-4 border-t border-gray-200">
-        <label htmlFor="suggested-text-output" className="block text-sm font-medium text-gray-700">Sugestão de Texto (IA)</label>
-        <div className="relative">
-            <textarea id="suggested-text-output" rows={6} readOnly className="w-full p-3 bg-gray-100 border border-gray-300 rounded-lg shadow-sm focus:ring-0 focus:border-gray-300 cursor-not-allowed" value={suggestedText} placeholder="Clique em 'Sugerir Texto com IA' para gerar uma versão aprimorada." aria-label="Texto sugerido pela IA"/>
-             {suggestedText && (
-                <button onClick={handleUseSuggestedText} disabled={anyLoading} className="absolute bottom-3 right-3 px-3 py-1 bg-green-600 text-white text-xs font-bold rounded-md hover:bg-green-700 transition disabled:opacity-50">
-                    Usar este texto
-                </button>
-            )}
-        </div>
-        <button onClick={() => onSuggestText(text)} disabled={isSuggestingText || !text.trim() || isLoading || isTurboLoading} className="w-full flex items-center justify-center p-3 bg-gray-700 text-white font-bold rounded-lg shadow-md hover:bg-gray-800 transition-all duration-200 ease-in-out transform hover:scale-[1.02] focus-ring focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
-            {isSuggestingText ? (
-                <><LoadingSpinner className="w-5 h-5 mr-3" />Sugerindo...</>
-            ) : (
-                <><SparklesIcon className="w-5 h-5 mr-3" />Sugerir Texto com IA</>
-            )}
-        </button>
-      </div>
-
       <div className="pt-4 border-t border-gray-200">
          <p className="text-center text-sm font-medium text-gray-700 mb-3">Escolha como finalizar sua locução:</p>
          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <button onClick={() => onGenerateExpert(text)} disabled={anyLoading || !text.trim()} className="w-full flex items-center justify-center p-4 bg-gray-800 text-white font-bold rounded-lg shadow-md hover:bg-gray-900 transition-all duration-200 ease-in-out transform hover:scale-[1.02] focus-ring focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+            <button onClick={() => onGenerateExpert(text)} disabled={anyLoading || !text.trim() || !selectedVoice} className="w-full flex items-center justify-center p-4 bg-gray-800 text-white font-bold rounded-lg shadow-md hover:bg-gray-900 transition-all duration-200 ease-in-out transform hover:scale-[1.02] focus-ring focus:outline-none disabled:bg-gray-400 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
                 {isLoading ? (
                     <><LoadingSpinner className="w-5 h-5 mr-3" />Gerando...</>
                 ) : (
                     "Modo Experto"
                 )}
             </button>
-            <button onClick={() => onGenerateTurbo(text)} disabled={anyLoading || !text.trim()} className="w-full flex items-center justify-center p-4 bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold rounded-lg shadow-md hover:opacity-90 transition-all duration-200 ease-in-out transform hover:scale-[1.02] focus-ring focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
+            <button onClick={() => onGenerateTurbo(text)} disabled={anyLoading || !text.trim() || !selectedVoice} className="w-full flex items-center justify-center p-4 bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold rounded-lg shadow-md hover:opacity-90 transition-all duration-200 ease-in-out transform hover:scale-[1.02] focus-ring focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none">
                 {isTurboLoading ? (
                     <><LoadingSpinner className="w-5 h-5 mr-3" />Gerando...</>
                 ) : (

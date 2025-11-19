@@ -1,3 +1,5 @@
+
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { UploadIcon, MusicIcon, LoadingSpinner, PlayIcon, PauseIcon, DownloadIcon, Volume2Icon, VolumeXIcon, SlidersIcon, WandIcon } from './IconComponents';
 
@@ -54,9 +56,63 @@ async function audioBufferToMp3(buffer: AudioBuffer): Promise<Blob> {
     return new Blob(mp3Data, { type: 'audio/mpeg' });
 }
 
+
+// #region High-Quality Time-Stretching (Phase Vocoder)
+// Based on well-established algorithms, adapted for this project.
+
+function fft(real: Float32Array, imag: Float32Array) {
+    const n = real.length;
+    if (n === 0) return;
+    
+    // Bit-reversal permutation
+    for (let i = 1, j = 0; i < n; i++) {
+        let bit = n >> 1;
+        for (; j >= bit; bit >>= 1) j -= bit;
+        j += bit;
+        if (i < j) {
+            [real[i], real[j]] = [real[j], real[i]];
+            [imag[i], imag[j]] = [imag[j], imag[i]];
+        }
+    }
+
+    // Cooley-Tukey main loops
+    for (let len = 2; len <= n; len <<= 1) {
+        const halfLen = len >> 1;
+        const tReal = Math.cos(Math.PI / halfLen);
+        const tImag = Math.sin(Math.PI / halfLen);
+        for (let i = 0; i < n; i += len) {
+            let wReal = 1;
+            let wImag = 0;
+            for (let j = 0; j < halfLen; j++) {
+                const uReal = real[i + j];
+                const uImag = imag[i + j];
+                const vReal = real[i + j + halfLen] * wReal - imag[i + j + halfLen] * wImag;
+                const vImag = real[i + j + halfLen] * wImag + imag[i + j + halfLen] * wReal;
+                real[i + j] = uReal + vReal;
+                imag[i + j] = uImag + vImag;
+                real[i + j + halfLen] = uReal - vReal;
+                imag[i + j + halfLen] = uImag - vImag;
+                const temp = wReal * tReal - wImag * tImag;
+                wImag = wReal * tImag + wImag * tReal;
+                wReal = temp;
+            }
+        }
+    }
+}
+
+function ifft(real: Float32Array, imag: Float32Array) {
+    fft(imag, real);
+    const n = real.length;
+    if (n === 0) return;
+    for (let i = 0; i < n; i++) {
+        real[i] /= n;
+        imag[i] /= n;
+    }
+}
+
 /**
- * Time-stretches an AudioBuffer using a basic OLA (Overlap-Add) method
- * to change speed without changing the pitch.
+ * Time-stretches an AudioBuffer using a Phase Vocoder method
+ * to change speed without changing the pitch, offering higher quality for voice.
  */
 async function timeStretch(
     audioContext: AudioContext, 
@@ -64,75 +120,118 @@ async function timeStretch(
     rate: number
 ): Promise<AudioBuffer> {
     return new Promise(resolve => {
-        // Run in a timeout to unblock the main thread for a moment, allowing UI to update.
-        setTimeout(() => {
+        setTimeout(() => { // Keep UI responsive by running in a timeout
             if (Math.abs(rate - 1.0) < 0.01) {
                 resolve(buffer);
                 return;
             }
 
-            const inputData = buffer.getChannelData(0); // Process mono
+            const frameSize = 2048;
+            const hopSize = frameSize / 4;
+
+            const inputData = buffer.getChannelData(0);
             const inputLength = inputData.length;
             const outputLength = Math.floor(inputLength / rate);
-            const outputData = new Float32Array(outputLength);
+            const outputData = new Float32Array(outputLength).fill(0);
 
-            const frameSize = 2048;
-            const hopSize = 512; // 75% overlap, good for quality
-
-            // Hanning window to avoid clicks
+            // Hanning window
             const window = new Float32Array(frameSize);
             for (let i = 0; i < frameSize; i++) {
                 window[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (frameSize - 1)));
             }
 
-            let inputPos = 0.0;
+            // Phase vocoder state
+            const frameReal = new Float32Array(frameSize);
+            const frameImag = new Float32Array(frameSize);
+            const numBins = frameSize / 2 + 1;
+            
+            const prevInputPhases = new Float32Array(numBins).fill(0);
+            const outputPhases = new Float32Array(numBins).fill(0);
+
+            const twoPi = 2 * Math.PI;
+            const sampleRate = buffer.sampleRate;
+            
             let outputPos = 0;
 
-            while (outputPos + frameSize < outputLength) {
-                const readPos = Math.round(inputPos);
-                if (readPos + frameSize >= inputLength) break;
-                
-                const frame = inputData.subarray(readPos, readPos + frameSize);
-                const windowedFrame = new Float32Array(frameSize);
+            for (let inputPos = 0; inputPos + frameSize <= inputLength; inputPos += hopSize) {
+                // 1. Analysis: Windowing and FFT
                 for (let i = 0; i < frameSize; i++) {
-                    windowedFrame[i] = frame[i] * window[i];
+                    frameReal[i] = inputData[inputPos + i] * window[i];
+                    frameImag[i] = 0;
                 }
-                
-                for (let i = 0; i < frameSize; i++) {
-                    outputData[outputPos + i] += windowedFrame[i];
-                }
-                
-                inputPos += hopSize * rate;
-                outputPos += hopSize;
-            }
+                fft(frameReal, frameImag);
 
-            // Normalize the output to avoid clipping and maintain volume
-            let max = 0;
-            for (let i = 0; i < outputLength; i++) {
-                if (Math.abs(outputData[i]) > max) {
-                    max = Math.abs(outputData[i]);
+                // 2. Process each frequency bin
+                for (let i = 0; i < numBins; i++) {
+                    const real = frameReal[i];
+                    const imag = frameImag[i];
+                    const magnitude = Math.sqrt(real * real + imag * imag);
+                    const inputPhase = Math.atan2(imag, real);
+
+                    // Phase difference and frequency deviation
+                    const phaseDiff = inputPhase - prevInputPhases[i];
+                    prevInputPhases[i] = inputPhase;
+
+                    const expectedPhase = twoPi * hopSize * i / frameSize;
+                    let phaseDeviation = phaseDiff - expectedPhase;
+                    
+                    while (phaseDeviation > Math.PI) phaseDeviation -= twoPi;
+                    while (phaseDeviation < -Math.PI) phaseDeviation += twoPi;
+
+                    // True frequency for this bin
+                    const freqDeviationInHz = phaseDeviation * sampleRate / (twoPi * hopSize);
+                    const trueFreqInHz = (i * sampleRate / frameSize) + freqDeviationInHz;
+
+                    // 3. Synthesis: Calculate new phase and create output spectrum
+                    const newPhase = outputPhases[i] + (twoPi * (hopSize / rate) * trueFreqInHz) / sampleRate;
+                    outputPhases[i] = newPhase;
+                    
+                    frameReal[i] = magnitude * Math.cos(newPhase);
+                    frameImag[i] = magnitude * Math.sin(newPhase);
+
+                    if (i > 0 && i < numBins - 1) {
+                       frameReal[frameSize - i] = frameReal[i];
+                       frameImag[frameSize - i] = -frameImag[i];
+                    }
                 }
+
+                // 4. Inverse FFT and Overlap-Add
+                ifft(frameReal, frameImag);
+                
+                for (let i = 0; i < frameSize; i++) {
+                    const outIndex = Math.round(outputPos) + i;
+                    if (outIndex < outputLength) {
+                        outputData[outIndex] += frameReal[i] * window[i];
+                    }
+                }
+                
+                outputPos += hopSize / rate;
             }
-            if (max > 0) {
-                const gain = 1.0 / max;
+            
+            // Simple peak normalization to prevent clipping, which can be perceived as low quality.
+            const maxAmplitude = outputData.reduce((max, val) => Math.max(max, Math.abs(val)), 0);
+            if (maxAmplitude > 1.0) {
+                const gain = 1.0 / maxAmplitude;
                 for (let i = 0; i < outputLength; i++) {
                     outputData[i] *= gain;
                 }
             }
 
-            const newBuffer = audioContext.createBuffer(1, outputLength, buffer.sampleRate);
+            const newBuffer = audioContext.createBuffer(1, outputLength, sampleRate);
             newBuffer.copyToChannel(outputData, 0);
             
             resolve(newBuffer);
         }, 0);
     });
 }
-
+// #endregion
 
 interface MixerProps {
   generatedAudio: AudioBuffer;
   audioContext: AudioContext;
   setGeneratedAudio: (audio: AudioBuffer | null) => void;
+  preloadedTracks: { name: string, buffer: AudioBuffer }[];
+  isDefaultTrackLoading: boolean;
 }
 
 type Track = { buffer: AudioBuffer; fileName: string };
@@ -141,7 +240,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 type TrackName = 'opening' | 'voice' | 'background' | 'closing';
 
-export const Mixer: React.FC<MixerProps> = ({ generatedAudio, audioContext, setGeneratedAudio }) => {
+export const Mixer: React.FC<MixerProps> = ({ generatedAudio, audioContext, setGeneratedAudio, preloadedTracks, isDefaultTrackLoading }) => {
   const [openingTrack, setOpeningTrack] = useState<Track | null>(null);
   const [backgroundTrack, setBackgroundTrack] = useState<Track | null>(null);
   const [closingTrack, setClosingTrack] = useState<Track | null>(null);
@@ -179,6 +278,17 @@ export const Mixer: React.FC<MixerProps> = ({ generatedAudio, audioContext, setG
   // State and Refs for individual track previews
   const [previewingTrack, setPreviewingTrack] = useState<TrackName | null>(null);
   const previewSourceRef = useRef<{source: AudioBufferSourceNode, gain: GainNode} | null>(null);
+  
+  const isInitialLoad = useRef(true);
+  useEffect(() => {
+    if (preloadedTracks.length > 0 && isInitialLoad.current) {
+        setBackgroundTrack({
+            buffer: preloadedTracks[0].buffer,
+            fileName: preloadedTracks[0].name,
+        });
+        isInitialLoad.current = false;
+    }
+  }, [preloadedTracks]);
 
   const stopPreview = useCallback(() => {
     if (previewSourceRef.current) {
@@ -249,6 +359,24 @@ export const Mixer: React.FC<MixerProps> = ({ generatedAudio, audioContext, setG
         setIsLoading(prev => ({ ...prev, [trackType]: false }));
     }
   };
+
+  const handleBackgroundSelection = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedName = e.target.value;
+    if (selectedName === 'custom') {
+        setBackgroundTrack(null);
+        // Trigger file input click
+        const uploader = document.getElementById('background-upload-input');
+        uploader?.click();
+    } else {
+        const selectedTrack = preloadedTracks.find(t => t.name === selectedName);
+        if (selectedTrack) {
+            setBackgroundTrack({
+                buffer: selectedTrack.buffer,
+                fileName: selectedTrack.name
+            });
+        }
+    }
+};
   
   const togglePreview = useCallback(async (track: TrackName) => {
     if (isPlaying) stopPlayback();
@@ -515,21 +643,87 @@ export const Mixer: React.FC<MixerProps> = ({ generatedAudio, audioContext, setG
 
         // --- Remove Silence ---
         if (treatments.removeSilence) {
-            const threshold = 0.01;
             const data = bufferToProcess.getChannelData(0);
-            let first = 0;
-            while (first < data.length && Math.abs(data[first]) < threshold) first++;
-            let last = data.length - 1;
-            while (last > first && Math.abs(data[last]) < threshold) last--;
+            const sampleRate = bufferToProcess.sampleRate;
 
-            if (last > first) {
-                const newLength = last - first;
-                const newBuffer = audioContext.createBuffer(1, newLength, bufferToProcess.sampleRate);
-                const newData = newBuffer.getChannelData(0);
-                for(let i = 0; i < newLength; i++) {
-                    newData[i] = data[first + i];
+            const threshold = 0.01;
+            const minSilenceDurationSec = 0.4;
+            const paddingDurationSec = 0.1;
+
+            const minSilenceSamples = Math.floor(minSilenceDurationSec * sampleRate);
+            const paddingSamples = Math.floor(paddingDurationSec * sampleRate);
+
+            const soundSegments = [];
+            let segmentStart = 0;
+
+            // Find first sound
+            while (segmentStart < data.length && Math.abs(data[segmentStart]) < threshold) {
+                segmentStart++;
+            }
+
+            let silenceStart = -1;
+            for (let i = segmentStart; i < data.length; i++) {
+                if (Math.abs(data[i]) < threshold && silenceStart === -1) {
+                    silenceStart = i; // Potential start of a silent period
+                } else if (Math.abs(data[i]) >= threshold && silenceStart !== -1) {
+                    silenceStart = -1; // Sound again, was not a long silence
                 }
-                bufferToProcess = newBuffer;
+                
+                if (silenceStart !== -1 && (i - silenceStart) >= minSilenceSamples) {
+                    // Confirmed long silence. End the current sound segment.
+                    const segmentEnd = Math.max(segmentStart, silenceStart - paddingSamples);
+                    if (segmentEnd > segmentStart) {
+                        soundSegments.push(data.subarray(segmentStart, segmentEnd));
+                    }
+
+                    // Find start of next sound segment
+                    segmentStart = i;
+                    while(segmentStart < data.length && Math.abs(data[segmentStart]) < threshold) {
+                        segmentStart++;
+                    }
+                    i = segmentStart - 1; // Adjust loop counter
+                    silenceStart = -1;
+                }
+            }
+
+            // Add the final segment, trimming any trailing silence
+            if (segmentStart < data.length) {
+                const finalSegment = data.subarray(segmentStart);
+                let endOfSound = finalSegment.length - 1;
+                while (endOfSound >= 0 && Math.abs(finalSegment[endOfSound]) < threshold) {
+                    endOfSound--;
+                }
+                if (endOfSound >= 0) {
+                    soundSegments.push(finalSegment.subarray(0, endOfSound + 1));
+                }
+            }
+            
+            if (soundSegments.length > 0) {
+                const keepSilenceDurationSec = 0.15;
+                const keepSilenceSamples = Math.floor(keepSilenceDurationSec * sampleRate);
+                
+                let totalLength = (soundSegments.length - 1) * keepSilenceSamples;
+                soundSegments.forEach(segment => { totalLength += segment.length; });
+
+                if (totalLength > 0) {
+                    const result = new Float32Array(totalLength);
+                    let offset = 0;
+                    soundSegments.forEach((segment, index) => {
+                        result.set(segment, offset);
+                        offset += segment.length;
+                        if (index < soundSegments.length - 1) {
+                            offset += keepSilenceSamples;
+                        }
+                    });
+                    
+                    const newBuffer = audioContext.createBuffer(1, result.length, sampleRate);
+                    newBuffer.copyToChannel(result, 0);
+                    bufferToProcess = newBuffer;
+                } else {
+                     bufferToProcess = audioContext.createBuffer(1, 1, sampleRate);
+                }
+            } else {
+                bufferToProcess = audioContext.createBuffer(1, 1, sampleRate);
             }
         }
         
@@ -728,7 +922,7 @@ export const Mixer: React.FC<MixerProps> = ({ generatedAudio, audioContext, setG
                     const treatmentKey = key as keyof typeof treatments;
                     const labels: Record<keyof typeof treatments, string> = {
                         noiseReduction: 'Redutor de Ruído',
-                        removeSilence: 'Remover Silêncio',
+                        removeSilence: 'Remover Silêncios',
                         normalizeVolume: 'Normalizar Volume',
                         compressor: 'Compressor'
                     };
@@ -747,7 +941,40 @@ export const Mixer: React.FC<MixerProps> = ({ generatedAudio, audioContext, setG
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <AudioUploader id="opening-upload" title="Abertura (Opcional)" track={openingTrack} isLoading={isLoading.opening} onFileChange={(e) => handleFileChange(e, 'opening')} onRemove={() => setOpeningTrack(null)} />
-        <AudioUploader id="background-upload" title="Trilha Sonora (Opcional)" track={backgroundTrack} isLoading={isLoading.background} onFileChange={(e) => handleFileChange(e, 'background')} onRemove={() => setBackgroundTrack(null)} />
+        <div>
+            <label htmlFor="background-select" className="block text-sm font-medium text-gray-700">Trilha Sonora (Opcional)</label>
+            {isDefaultTrackLoading ? (
+                <div className="mt-2 flex items-center justify-center text-sm bg-gray-50 p-4 rounded-md h-[58px]">
+                    <LoadingSpinner className="w-6 h-6 mr-2 text-gray-400" />
+                    <span className="font-medium text-gray-600">Carregando trilhas...</span>
+                </div>
+            ) : (
+                <div className="mt-2 space-y-2">
+                    <select
+                        id="background-select"
+                        value={backgroundTrack ? preloadedTracks.find(t => t.name === backgroundTrack.fileName) ? backgroundTrack.fileName : 'custom' : ''}
+                        onChange={handleBackgroundSelection}
+                        className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg shadow-sm transition duration-150 ease-in-out focus:border-red-500 focus:ring-2 focus:ring-red-200"
+                    >
+                        <option value="" disabled>Selecione uma trilha</option>
+                        {preloadedTracks.map(track => (
+                            <option key={track.name} value={track.name}>{track.name}</option>
+                        ))}
+                        <option value="custom">Carregar do computador...</option>
+                    </select>
+                     {backgroundTrack && (
+                        <div className="flex items-center justify-between text-sm bg-gray-100 p-2 rounded-md">
+                            <div className="flex items-center truncate">
+                                <MusicIcon className="w-5 h-5 mr-2 text-red-600 flex-shrink-0" />
+                                <span className="font-medium text-gray-800 truncate" title={backgroundTrack.fileName}>{backgroundTrack.fileName}</span>
+                            </div>
+                            <button onClick={() => setBackgroundTrack(null)} className="ml-2 text-xs font-semibold text-red-600 hover:underline flex-shrink-0">Remover</button>
+                        </div>
+                    )}
+                    <input id="background-upload-input" type="file" accept="audio/mpeg, audio/wav" className="hidden" onChange={(e) => handleFileChange(e, 'background')} disabled={isLoading.background} />
+                </div>
+            )}
+        </div>
         <AudioUploader id="closing-upload" title="Fechamento (Opcional)" track={closingTrack} isLoading={isLoading.closing} onFileChange={(e) => handleFileChange(e, 'closing')} onRemove={() => setClosingTrack(null)} />
       </div>
 
