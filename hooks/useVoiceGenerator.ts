@@ -36,7 +36,8 @@ async function decodeAudioData(
 async function fetchWithRetry(url: string, retries = 3, delay = 500): Promise<Response> {
     for (let i = 0; i < retries; i++) {
         try {
-            const response = await fetch(url, { mode: 'cors', cache: 'no-cache' });
+            // Removed mode: 'cors' to allow same-origin optimizations and avoid potential issues
+            const response = await fetch(url, { cache: 'no-cache' });
             if (response.ok) return response;
             if (response.status >= 400 && response.status < 500) throw new Error(`Client error: ${response.status}`);
             throw new Error(`Server error: ${response.status}`);
@@ -193,8 +194,6 @@ export const useVoiceGenerator = (
 
     const generateTurbo = async (voice: Voice | null, text: string) => {
         if (!voice) { setError("Selecione uma voz."); return; }
-        // Se não houver trilha padrão global e nem trilha específica da voz, erro.
-        if (!defaultBackgroundTrack && !voice.defaultTrackUrl) { setError("Trilha sonora indisponível."); return; }
 
         setIsTurboLoading(true);
         setError(null);
@@ -208,6 +207,18 @@ export const useVoiceGenerator = (
 
             // 2. Carregar Trilha de Fundo (Prioridade: Voz > Global)
             let bgBuffer = defaultBackgroundTrack;
+
+            // Se não tem trilha carregada, tenta carregar a padrão agora
+            if (!bgBuffer && backgroundTracks.length > 0) {
+                try {
+                    console.log("Tentando carregar trilha padrão sob demanda...");
+                    bgBuffer = await loadTrack(backgroundTracks[0].url);
+                    setDefaultBackgroundTrack(bgBuffer); // Salva para a próxima
+                } catch (e) {
+                    console.warn("Falha ao carregar trilha padrão sob demanda:", e);
+                }
+            }
+
             if (voice.defaultTrackUrl) {
                 try {
                     bgBuffer = await loadTrack(voice.defaultTrackUrl);
@@ -218,7 +229,7 @@ export const useVoiceGenerator = (
             }
 
             if (!bgBuffer) {
-                setError("Falha ao carregar trilha sonora.");
+                setError("Falha ao carregar trilha sonora. Verifique sua conexão.");
                 setIsTurboLoading(false);
                 return;
             }
