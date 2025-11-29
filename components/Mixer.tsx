@@ -1026,7 +1026,7 @@ export const Mixer: React.FC<MixerProps> = ({
     return (
         <div className="space-y-8">
             {/* Mixer Controls */}
-            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700">
+            <div className="bg-slate-800 p-4 md:p-6 rounded-2xl shadow-xl border border-slate-700">
                 <h3 className="text-lg font-bold text-white mb-6 flex items-center">
                     <SlidersIcon className="w-5 h-5 mr-2 text-indigo-500" />
                     Mixagem Profissional
@@ -1060,7 +1060,7 @@ export const Mixer: React.FC<MixerProps> = ({
                         />
 
                         {/* Voice Effects Panel */}
-                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 ml-4 space-y-4">
+                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 ml-0 md:ml-4 space-y-4 mt-4 md:mt-0">
                             <div className="flex justify-between items-center">
                                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center">
                                     <WandIcon className="w-3 h-3 mr-2" />
@@ -1338,12 +1338,12 @@ export const Mixer: React.FC<MixerProps> = ({
 
             {/* Final Mix Visualization */}
             <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-2xl">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-lg font-bold text-white flex items-center">
+                <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                    <h3 className="text-lg font-bold text-white flex items-center self-start md:self-center">
                         <WandIcon className="w-5 h-5 mr-2 text-indigo-500" />
                         Resultado Final
                     </h3>
-                    <div className="flex gap-4 items-center">
+                    <div className="flex gap-4 items-center w-full md:w-auto justify-between md:justify-end">
                         <button
                             onClick={toggleMixPlayPause}
                             disabled={isPreparingMix}

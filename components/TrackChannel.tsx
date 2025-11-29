@@ -117,9 +117,9 @@ export const TrackChannel: React.FC<TrackChannelProps> = ({
     };
 
     return (
-        <div className="flex flex-col md:flex-row bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+        <div className="flex flex-col md:flex-row bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow w-full">
             {/* Left Panel: Controls */}
-            <div className="w-full md:w-64 bg-slate-50 p-4 border-b md:border-b-0 md:border-r border-slate-200 flex flex-col gap-4 flex-shrink-0">
+            <div className="w-full md:w-64 bg-slate-50 p-3 md:p-4 border-b md:border-b-0 md:border-r border-slate-200 flex flex-col gap-4 flex-shrink-0">
                 <div className="flex items-center justify-between">
                     <h4 className="font-bold text-slate-700 truncate" title={title}>{title}</h4>
                     {track && onPreviewToggle && (

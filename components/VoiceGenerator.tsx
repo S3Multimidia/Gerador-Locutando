@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { Voice } from '../types';
+import { getApiKey } from '../utils/api';
 import { PlayIcon, LoadingSpinner, CheckIcon, PauseIcon, WandIcon, PaperclipIcon, CameraIcon } from './IconComponents';
 import { GoogleGenAI } from '@google/genai';
 import { DynamicLoadingMessage } from './DynamicLoadingMessage';
@@ -163,13 +164,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
         reader.readAsDataURL(file);
       });
 
-      const apiKey = (typeof process !== 'undefined' && (process as any).env && (process as any).env.API_KEY)
-        ? (process as any).env.API_KEY
-        : (typeof window !== 'undefined' && (window as any).__API_KEY__)
-          ? (window as any).__API_KEY__
-          : (typeof window !== 'undefined' && localStorage.getItem('apiKey'))
-            ? localStorage.getItem('apiKey')!
-            : undefined;
+      const apiKey = getApiKey();
 
       if (!apiKey) throw new Error("API Key not found");
 
@@ -215,13 +210,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
     if (isLoading || isTurboLoading) return;
     setIsSuggesting(true);
     try {
-      const apiKey = (typeof process !== 'undefined' && (process as any).env && (process as any).env.API_KEY)
-        ? (process as any).env.API_KEY
-        : (typeof window !== 'undefined' && (window as any).__API_KEY__)
-          ? (window as any).__API_KEY__
-          : (typeof window !== 'undefined' && localStorage.getItem('apiKey'))
-            ? localStorage.getItem('apiKey')!
-            : undefined;
+      const apiKey = getApiKey();
       if (!apiKey) { setIsSuggesting(false); return; }
       const ai = new GoogleGenAI({ apiKey });
       const allowed = availableVoices.map(v => v.id).join(', ');
@@ -252,13 +241,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
   const generateSpecialistScript = async () => {
     setIsValidating(true);
     try {
-      const apiKey = (typeof process !== 'undefined' && (process as any).env && (process as any).env.API_KEY)
-        ? (process as any).env.API_KEY
-        : (typeof window !== 'undefined' && (window as any).__API_KEY__)
-          ? (window as any).__API_KEY__
-          : (typeof window !== 'undefined' && localStorage.getItem('apiKey'))
-            ? localStorage.getItem('apiKey')!
-            : undefined;
+      const apiKey = getApiKey();
 
       if (!apiKey) { setIsValidating(false); return; }
 
@@ -329,13 +312,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
 
     setIsValidating(true);
     try {
-      const apiKey = (typeof process !== 'undefined' && (process as any).env && (process as any).env.API_KEY)
-        ? (process as any).env.API_KEY
-        : (typeof window !== 'undefined' && (window as any).__API_KEY__)
-          ? (window as any).__API_KEY__
-          : (typeof window !== 'undefined' && localStorage.getItem('apiKey'))
-            ? localStorage.getItem('apiKey')!
-            : undefined;
+      const apiKey = getApiKey();
 
       if (!apiKey) { setIsValidating(false); return; }
 

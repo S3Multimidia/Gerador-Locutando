@@ -105,7 +105,7 @@ export const BackgroundTrackCarousel: React.FC<BackgroundTrackCarouselProps> = (
             </div>
 
             {/* Static Options (No Track & Upload) */}
-            <div className="mt-6 grid grid-cols-2 gap-4 border-t border-slate-700/50 pt-6">
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-700/50 pt-6">
                 {/* No Track Option */}
                 <div
                     onClick={() => onSelect('none')}

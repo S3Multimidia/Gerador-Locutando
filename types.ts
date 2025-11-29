@@ -25,7 +25,7 @@ export interface User {
   plan: 'Básico' | 'Profissional' | 'Empresarial';
   status: 'Ativo' | 'Inativo';
   role: Role;
-  password: string;
+  password?: string;
 }
 
 export interface Client {

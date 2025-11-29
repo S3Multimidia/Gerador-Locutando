@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { User, Role } from '../types';
 
 const INITIAL_USERS: User[] = [
-  { id: 1, name: 'Admin', email: 'admin@admin.com', plan: 'Empresarial', status: 'Ativo', role: 'admin', password: 'mudar@123' },
-  { id: 2, name: 'Cliente', email: 'cliente@cliente.com', plan: 'Profissional', status: 'Ativo', role: 'user', password: 'locutando' },
+  { id: 1, name: 'S3 Multimídia', email: 's3multimidia@gmail.com', plan: 'Empresarial', status: 'Ativo', role: 'admin' },
+  { id: 2, name: 'Cliente', email: 'cliente@cliente.com', plan: 'Profissional', status: 'Ativo', role: 'user' },
 ];
 
 export const useAuth = () => {
@@ -23,17 +23,51 @@ export const useAuth = () => {
     return INITIAL_USERS;
   });
 
-  const login = (email: string, password: string): { success: boolean; message?: string } => {
+  const loginWithGoogle = (email: string): { success: boolean; message?: string } => {
     const cleanEmail = email.trim().toLowerCase();
-    const found = users.find(u => u.email.toLowerCase() === cleanEmail);
 
-    if (found && found.password === password && found.status === 'Ativo') {
-      setIsAuthenticated(true);
-      setUserRole(found.role);
-      setCurrentUser(found);
-      return { success: true };
+    // Check if user exists
+    let user = users.find(u => u.email.toLowerCase() === cleanEmail);
+
+    // If not, create a new user (Simulation of "Sign Up with Google")
+    if (!user) {
+      // If it's the specific admin email, ensure they get admin role even if not in storage initially
+      if (cleanEmail === 's3multimidia@gmail.com') {
+        user = {
+          id: Date.now(),
+          name: 'S3 Multimídia',
+          email: cleanEmail,
+          plan: 'Empresarial',
+          status: 'Ativo',
+          role: 'admin'
+        };
+      } else {
+        user = {
+          id: Date.now(),
+          name: email.split('@')[0], // Simple name extraction
+          email: cleanEmail,
+          plan: 'Gratuito', // Default plan for new users
+          status: 'Ativo',
+          role: 'user'
+        };
+      }
+      setUsers(prev => [...prev, user!]);
     }
-    return { success: false, message: 'E-mail ou senha inválidos.' };
+
+    // Enforce Admin Role for specific email
+    if (cleanEmail === 's3multimidia@gmail.com' && user.role !== 'admin') {
+      user.role = 'admin';
+    }
+
+    setIsAuthenticated(true);
+    setUserRole(user.role);
+    setCurrentUser(user);
+    return { success: true };
+  };
+
+  // Deprecated: kept for compatibility if needed, but redirects to google login logic
+  const login = (email: string, password: string) => {
+    return loginWithGoogle(email);
   };
 
   const logout = () => {
@@ -49,6 +83,7 @@ export const useAuth = () => {
     users,
     setUsers,
     login,
+    loginWithGoogle,
     logout
   };
 };
