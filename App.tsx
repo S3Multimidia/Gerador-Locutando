@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { MainLayout } from './layouts/MainLayout';
 import { LoginPage } from './pages/LoginPage';
 import { PricingPage } from './pages/PricingPage';
@@ -161,21 +162,25 @@ const App: React.FC = () => {
     );
   }
 
+  const googleClientId = safeStorageGet('googleClientId', '');
+
   return (
-    <ErrorBoundary>
-      <ThemeProvider>
-        <SiteConfigProvider>
-          <MainLayout
-            user={auth.currentUser}
-            onLogout={handleLogout}
-            onNavigate={handleNavigate}
-            currentPage={page}
-          >
-            {renderPage()}
-          </MainLayout>
-        </SiteConfigProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
+    <GoogleOAuthProvider clientId={googleClientId}>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <SiteConfigProvider>
+            <MainLayout
+              user={auth.currentUser}
+              onLogout={handleLogout}
+              onNavigate={handleNavigate}
+              currentPage={page}
+            >
+              {renderPage()}
+            </MainLayout>
+          </SiteConfigProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </GoogleOAuthProvider>
   );
 };
 
