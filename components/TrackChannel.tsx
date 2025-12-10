@@ -39,6 +39,8 @@ interface TrackChannelProps {
     canUndo?: boolean;
     onUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
     uploadLabel?: string;
+    silenceThreshold?: number;
+    onSilenceThresholdChange?: (value: number) => void;
 }
 
 export const TrackChannel: React.FC<TrackChannelProps> = ({
@@ -72,7 +74,9 @@ export const TrackChannel: React.FC<TrackChannelProps> = ({
     onUndo,
     canUndo = false,
     onUpload,
-    uploadLabel = 'Carregar Arquivo'
+    uploadLabel = 'Carregar Arquivo',
+    silenceThreshold = 0.5,
+    onSilenceThresholdChange
 }) => {
     const duration = track?.buffer.duration || 0;
     const [selection, setSelection] = React.useState<{ start: number; end: number } | null>(null);
@@ -309,6 +313,27 @@ export const TrackChannel: React.FC<TrackChannelProps> = ({
                                 </button>
                             )}
                         </div>
+
+                        {/* Silence Intensity Slider (Conditional) */}
+                        {isSilenceRemovalActive && onSilenceRemovalToggle && onSilenceThresholdChange && (
+                            <div className="pt-2 border-t border-slate-200 animate-fade-in">
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 mb-1">
+                                    <span>Intensidade (Threshold)</span>
+                                    <span className="font-mono text-indigo-500">{Math.round(silenceThreshold * 100)}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.01"
+                                    value={silenceThreshold}
+                                    onChange={(e) => onSilenceThresholdChange(parseFloat(e.target.value))}
+                                    className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                    title="Ajuste a sensibilidade da remoção de silêncio"
+                                />
+                                <p className="text-[9px] text-slate-400 mt-0.5">Quanto maior, mais agressiva a remoção.</p>
+                            </div>
+                        )}
                     </>
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center p-4">

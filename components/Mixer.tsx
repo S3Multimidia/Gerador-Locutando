@@ -3,7 +3,10 @@ import { UploadIcon, MusicIcon, LoadingSpinner, PlayIcon, PauseIcon, DownloadIco
 import { BackgroundTrackCarousel } from './BackgroundTrackCarousel';
 import { TrackChannel } from './TrackChannel';
 import { FinalMixWaveform } from './FinalMixWaveform';
+
 import { TrackInfo } from '../types';
+import { timeStretchSOLA } from '../utils/timeStretching';
+import { useMixerPersistence } from '../hooks/useMixerPersistence';
 
 // LameJS is loaded from a script tag in index.html
 declare var lamejs: any;
@@ -65,166 +68,13 @@ async function audioBufferToMp3(buffer: AudioBuffer, startTime?: number, endTime
 }
 
 
-// #region High-Quality Time-Stretching (SOLA - Synchronized Overlap-Add)
-// SOLA is generally better for voice than Phase Vocoder as it avoids "phasiness" (metallic sound).
+// #region Time Stretching
 async function timeStretch(
     buffer: AudioBuffer,
     rate: number,
     audioContext: AudioContext
 ): Promise<AudioBuffer> {
-    if (rate === 1.0) return buffer;
-
-    const inputData = buffer.getChannelData(0);
-    const sampleRate = buffer.sampleRate;
-    const numSamples = inputData.length;
-
-    // SOLA Parameters
-    const windowSizeMs = 60; // 60ms window is good for voice
-    const windowSize = Math.floor(sampleRate * (windowSizeMs / 1000));
-    const overlapMs = 20; // 20ms overlap search range
-    const overlap = Math.floor(sampleRate * (overlapMs / 1000));
-    const searchRange = overlap;
-
-    // Calculate analysis and synthesis hop sizes
-    // We want to move the analysis window by 'Ha' and synthesis window by 'Hs'
-    // rate = Ha / Hs. 
-    // Usually we fix Hs (synthesis hop) and vary Ha (analysis hop) or vice versa.
-    // Let's fix Synthesis Hop (Hs) to be (WindowSize - Overlap) roughly?
-    // Actually, standard SOLA:
-    // Sa (Analysis Step) = Ss (Synthesis Step) * rate
-
-    const synthesisStep = Math.floor(windowSize / 2);
-    const analysisStep = Math.floor(synthesisStep * rate);
-
-    const outputCapacity = Math.ceil(numSamples / rate) + windowSize;
-    const outputData = new Float32Array(outputCapacity);
-
-    let inputOffset = 0;
-    let outputOffset = 0;
-    let outputLength = 0;
-
-    // Copy first window directly
-    if (numSamples > windowSize) {
-        outputData.set(inputData.subarray(0, windowSize), 0);
-        inputOffset = analysisStep;
-        outputOffset = synthesisStep;
-        outputLength = windowSize;
-    } else {
-        return buffer; // Too short
-    }
-
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            while (inputOffset + windowSize + searchRange < numSamples) {
-                // 1. Extract Analysis Frame (Natural Frame)
-                const analysisFrame = inputData.subarray(inputOffset, inputOffset + windowSize);
-
-                // 2. Find best overlap position (Cross-Correlation) within search range
-                // We want to match the beginning of analysisFrame with the tail of outputData
-                // The "overlap zone" in outputData is at [outputOffset, outputOffset + overlap]
-                // But we can shift the analysisFrame placement by 'delta' to find best match.
-
-                let bestOffset = 0;
-                let maxCorrelation = -Infinity;
-
-                // We search for a shift 'k' in [0, searchRange]
-                // We compare outputData[outputOffset + k ... ] with analysisFrame[0 ... ]
-                // Actually, SOLA usually searches around the "expected" position.
-                // Here we simply search for the best alignment of the overlapping region.
-
-                // Region to match in Output: The tail we just wrote.
-                // We want to overlap the *start* of the new frame with the *end* of the existing output.
-                // Existing output ends at 'outputLength'.
-                // We ideally want to place the new frame at 'outputOffset'.
-                // We search k in [-searchRange/2, searchRange/2] or similar.
-
-                // Simplified SOLA:
-                // We look at the region of overlap.
-                // Overlap length = overlap (parameter).
-                // We compare outputData[outputOffset ... outputOffset + overlap] 
-                // with analysisFrame[0 ... overlap]
-                // But we shift analysisFrame by 'k' to find best match.
-
-                for (let k = 0; k < searchRange; k++) {
-                    let correlation = 0;
-                    // Normalized Cross-Correlation is better but simpler sum of products works for speed
-                    for (let i = 0; i < overlap; i++) {
-                        const val1 = outputData[outputOffset + i]; // Existing tail
-                        const val2 = analysisFrame[k + i]; // New head shifted by k
-                        correlation += val1 * val2;
-                    }
-                    if (correlation > maxCorrelation) {
-                        maxCorrelation = correlation;
-                        bestOffset = k;
-                    }
-                }
-
-                // 3. Overlap-Add at best offset
-                // We place the analysisFrame at outputOffset + bestOffset?
-                // Wait, if we shift by k, it means we skip k samples of the analysis frame?
-                // Or we shift the write position?
-                // Standard SOLA: We shift the *write position* to align phases.
-                // So we write at outputOffset + bestOffset? No, that would create gaps.
-                // We effectively effectively "slide" the new frame to match.
-
-                // Let's use a simpler logic:
-                // We want to merge analysisFrame into outputData.
-                // The "ideal" merge point is outputOffset.
-                // We scan outputData[outputOffset ... outputOffset + searchRange] against analysisFrame[0...overlap]
-                // Wait, that's OLA.
-
-                // Let's stick to a robust implementation logic:
-                // 1. We have 'outputData' filled up to 'outputLength'.
-                // 2. We want to add 'analysisFrame'.
-                // 3. We look for best match between:
-                //    Tail of Output: outputData[outputOffset ... outputOffset + overlap]
-                //    Head of Input:  analysisFrame[0 ... overlap]
-                //    We shift the Input Head relative to Output Tail?
-
-                // Actually, let's just implement a basic Cross-Fade at the synthesis step.
-                // WSOLA is better but complex.
-                // Let's try a basic OLA with cross-fade (no phase alignment search) first? 
-                // No, user complained about distortion. Phase alignment is key.
-
-                // Let's use the computed bestOffset to adjust the write position.
-                // We found that analysisFrame[bestOffset] matches outputData[outputOffset] best.
-                // So we discard the first 'bestOffset' samples of analysisFrame and crossfade the rest.
-
-                const writePos = outputOffset;
-
-                // Cross-fade region
-                for (let i = 0; i < overlap; i++) {
-                    const alpha = i / overlap; // 0 to 1
-                    const existing = outputData[writePos + i];
-                    const newSample = analysisFrame[bestOffset + i];
-                    outputData[writePos + i] = existing * (1 - alpha) + newSample * alpha;
-                }
-
-                // Copy the rest of the frame
-                const remaining = windowSize - overlap - bestOffset;
-                if (remaining > 0) {
-                    for (let i = 0; i < remaining; i++) {
-                        outputData[writePos + overlap + i] = analysisFrame[bestOffset + overlap + i];
-                    }
-                }
-
-                // Update offsets
-                outputLength = writePos + windowSize - bestOffset; // Approximate
-                outputOffset += synthesisStep; // Advance synthesis pointer
-                inputOffset += analysisStep;   // Advance analysis pointer
-
-                // Ensure we don't drift too far
-                if (outputOffset > outputLength - overlap) {
-                    outputOffset = outputLength - overlap;
-                }
-            }
-
-            // Create final buffer
-            const finalBuffer = audioContext.createBuffer(1, outputLength, sampleRate);
-            finalBuffer.copyToChannel(outputData.slice(0, outputLength), 0);
-            resolve(finalBuffer);
-        }, 0);
-    });
+    return timeStretchSOLA(buffer, rate, audioContext);
 }
 // #endregion
 
@@ -272,16 +122,41 @@ export const Mixer: React.FC<MixerProps> = ({
     const [volumes, setVolumes] = useState({ opening: 1, voice: 1, background: 0.5, closing: 1 });
     const [mutes, setMutes] = useState({ opening: false, voice: false, background: false, closing: false });
 
+    // Persistence
+    const { savedMixerState, saveMixerState } = useMixerPersistence({ opening: 1, voice: 1, background: 0.5, closing: 1 });
+
+    // Load persistence
+    useEffect(() => {
+        if (savedMixerState) {
+            if (savedMixerState.volumes) setVolumes(savedMixerState.volumes);
+            if (savedMixerState.selectedBackgroundName) {
+                setSelectedBackgroundName(savedMixerState.selectedBackgroundName);
+                // Trigger track selection if it matches a preloaded track
+                const track = preloadedTracks.find(t => t.name === savedMixerState.selectedBackgroundName);
+                if (track) {
+                    setBackgroundTrack({ buffer: track.buffer, fileName: track.name });
+                }
+            }
+        }
+    }, [savedMixerState, preloadedTracks]);
+
+    // Save persistence
+    useEffect(() => {
+        saveMixerState({ selectedBackgroundName, volumes });
+    }, [selectedBackgroundName, volumes, saveMixerState]);
+
     // Voice Effects State
     const [voicePlaybackRate, setVoicePlaybackRate] = useState<number>(1.0);
     const [voiceCompression, setVoiceCompression] = useState<number>(0); // 0 to 1
     const [voiceEcho, setVoiceEcho] = useState<number>(0); // 0 to 1
     const [voiceFadeIn, setVoiceFadeIn] = useState<number>(0);
     const [voiceFadeOut, setVoiceFadeOut] = useState<number>(0);
-    const [voiceSilenceRemoval, setVoiceSilenceRemoval] = useState<boolean>(false);
-    const [voiceNoiseReduction, setVoiceNoiseReduction] = useState<number>(0); // 0 to 1
 
-    // Processed Voice Buffer (for visualization and final mix)
+    // Silence Removal State (Global for all tracks)
+    const [silenceActive, setSilenceActive] = useState({ opening: false, voice: false, background: false, closing: false });
+    const [silenceThresholds, setSilenceThresholds] = useState({ opening: 0.5, voice: 0.5, background: 0.5, closing: 0.5 });
+
+    // Processed Voice Buffer (Base for voice track)
     const [processedVoiceBuffer, setProcessedVoiceBuffer] = useState<AudioBuffer>(generatedAudio);
     const [isProcessingVoice, setIsProcessingVoice] = useState(false);
 
@@ -290,49 +165,34 @@ export const Mixer: React.FC<MixerProps> = ({
     const [crossfadeOutDuration, setCrossfadeOutDuration] = useState<number>(0.05);
     const [fadeInDuration, setFadeInDuration] = useState<number>(1.0);
     const [fadeOutDuration, setFadeOutDuration] = useState<number>(1.5);
-    const [introDuration, setIntroDuration] = useState<number>(3);
-    const [outroDuration, setOutroDuration] = useState<number>(3);
+    const [introDuration, setIntroDuration] = useState<number>(0);
+    const [outroDuration, setOutroDuration] = useState<number>(0);
 
     // Editing State (Destructive)
-    const [processedBuffers, setProcessedBuffers] = useState<Record<string, AudioBuffer>>({});
-
+    const [processedBuffers, setProcessedBuffers] = useState<Record<string, AudioBuffer>>({}); // Base buffers (Manual Edits)
+    const [finalBuffers, setFinalBuffers] = useState<Record<string, AudioBuffer>>({}); // Display buffers (Base + Filters)
+    const [undoStacks, setUndoStacks] = useState<Record<string, AudioBuffer[]>>({});
 
     // Global Mix Controls
     const [globalFadeIn, setGlobalFadeIn] = useState<number>(0);
     const [globalFadeOut, setGlobalFadeOut] = useState<number>(0);
 
-    // Helper to get current buffer for a track
+    // Helper to get current buffer for a track (FINAL view)
     const getTrackBuffer = useCallback((trackName: string, originalBuffer: AudioBuffer | null) => {
         if (!originalBuffer) return null;
-        if (trackName === 'voice') return processedVoiceBuffer; // Always use processed buffer for voice
+        // Check if we have a final buffer calculated
+        if (finalBuffers[trackName]) return finalBuffers[trackName];
+
+        // Fallback to processed (base) or original
+        if (trackName === 'voice') return processedVoiceBuffer;
         return processedBuffers[trackName] || originalBuffer;
-    }, [processedBuffers, processedVoiceBuffer]);
-
-    // Undo Types
-    interface VoiceParams {
-        compression: number;
-        echo: number;
-        noiseReduction: number;
-        volume: number;
-        playbackRate: number;
-        silenceRemoval: boolean;
-    }
-
-    type UndoItem = {
-        type: 'buffer';
-        data: AudioBuffer;
-    } | {
-        type: 'params';
-        data: VoiceParams;
-    };
-
-    const [undoStacks, setUndoStacks] = useState<Record<string, UndoItem[]>>({});
+    }, [finalBuffers, processedBuffers, processedVoiceBuffer]);
 
     // Helper to push undo
-    const pushUndo = (trackName: string, item: UndoItem) => {
+    const pushUndo = (trackName: string, buffer: AudioBuffer) => {
         setUndoStacks(prev => ({
             ...prev,
-            [trackName]: [...(prev[trackName] || []), item]
+            [trackName]: [...(prev[trackName] || []), buffer]
         }));
     };
 
@@ -354,17 +214,20 @@ export const Mixer: React.FC<MixerProps> = ({
                 }
 
                 // 1.5 Silence Removal (Non-destructive toggle)
-                if (voiceSilenceRemoval) {
-                    const { removeSilence } = await import('../utils/audioProcessing');
-                    buffer = removeSilence(buffer, -40, 0.15, 0.1);
-                }
+                // Handled by the pipeline effect now!
+                // But wait, processVoice is for "Real-time Voice Processing Effect".
+                // The pipeline effect runs AFTER this?
+                // No, pipeline effect depends on processedVoiceBuffer.
+                // So processVoice produces the "Base" for the pipeline.
+                // Silence removal for voice is now in the pipeline.
+                // So we REMOVE it from here.
 
                 // 2. Time Stretch
                 if (Math.abs(voicePlaybackRate - 1.0) > 0.01) {
                     buffer = await timeStretch(buffer, voicePlaybackRate, audioContext);
                 }
 
-                // 3. Apply Effects (Volume, Compression, Echo, Fades, Noise Reduction) using OfflineAudioContext
+                // 3. Apply Effects (Volume, Compression, Echo, Fades) using OfflineAudioContext
                 const offlineCtx = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
                 const source = offlineCtx.createBufferSource();
                 source.buffer = buffer;
@@ -374,27 +237,6 @@ export const Mixer: React.FC<MixerProps> = ({
                 gainNode.gain.value = volumes.voice;
 
                 let lastNode: AudioNode = source;
-
-                // Noise Reduction (Lowpass Filter)
-                if (voiceNoiseReduction > 0) {
-                    const filter = offlineCtx.createBiquadFilter();
-                    filter.type = 'lowpass';
-                    // Map 0-1 to 20000Hz - 1000Hz (Logarithmic-ish feel)
-                    // 0 -> 20000Hz (Open)
-                    // 1 -> 1000Hz (Closed/Muffled)
-                    // Formula: 20000 * (1 - value)^2 + 1000
-                    // Actually, let's try a simpler mapping for "Noise Reduction" which usually targets hiss > 4-5kHz
-                    // Let's map 0 -> 22050, 1 -> 2000
-                    const minFreq = 2000;
-                    const maxFreq = 22050;
-                    const frequency = maxFreq - (voiceNoiseReduction * (maxFreq - minFreq));
-
-                    filter.frequency.value = frequency;
-                    filter.Q.value = 0.5; // Smooth rolloff
-
-                    lastNode.connect(filter);
-                    lastNode = filter;
-                }
 
                 // Compression
                 if (voiceCompression > 0) {
@@ -453,65 +295,96 @@ export const Mixer: React.FC<MixerProps> = ({
         const timeoutId = setTimeout(processVoice, 50);
         return () => clearTimeout(timeoutId);
 
-    }, [generatedAudio, processedBuffers, voicePlaybackRate, voiceCompression, voiceEcho, voiceFadeIn, voiceFadeOut, volumes.voice, audioContext, voiceSilenceRemoval, voiceNoiseReduction]);
+    }, [generatedAudio, processedBuffers, voicePlaybackRate, voiceCompression, voiceEcho, voiceFadeIn, voiceFadeOut, volumes.voice, audioContext]);
+
+    // Pipeline Effect: Calculate Final Buffers (Silence Removal)
+    useEffect(() => {
+        const updateFinalBuffers = async () => {
+            const newFinalBuffers: Record<string, AudioBuffer> = {};
+            const { removeSilence } = await import('../utils/audioProcessing');
+
+            const tracks = ['opening', 'voice', 'background', 'closing'];
+
+            for (const track of tracks) {
+                let base: AudioBuffer | null = null;
+
+                if (track === 'voice') {
+                    base = processedVoiceBuffer;
+                } else {
+                    const original = track === 'opening' ? openingTrack : track === 'background' ? backgroundTrack : closingTrack;
+                    if (original) {
+                        base = processedBuffers[track] || original.buffer;
+                    }
+                }
+
+                if (base) {
+                    // Apply Silence Removal if active
+                    if (silenceActive[track as keyof typeof silenceActive]) {
+                        const threshold = silenceThresholds[track as keyof typeof silenceThresholds];
+                        // Map 0-1 to -60dB to -10dB
+                        const dbThreshold = -60 + (threshold * 50);
+                        try {
+                            newFinalBuffers[track] = removeSilence(base, dbThreshold, 0.5);
+                        } catch (e) {
+                            console.error(`Error removing silence for ${track}:`, e);
+                            newFinalBuffers[track] = base;
+                        }
+                    } else {
+                        newFinalBuffers[track] = base;
+                    }
+                }
+            }
+
+            setFinalBuffers(newFinalBuffers);
+        };
+
+        const timeoutId = setTimeout(updateFinalBuffers, 50); // Debounce
+        return () => clearTimeout(timeoutId);
+
+    }, [processedVoiceBuffer, processedBuffers, openingTrack, backgroundTrack, closingTrack, silenceActive, silenceThresholds]);
 
 
     const handleCut = async (trackName: string, start: number, end: number) => {
-        const originalTrack = trackName === 'voice' ? { buffer: generatedAudio } :
-            trackName === 'opening' ? openingTrack :
-                trackName === 'background' ? backgroundTrack :
-                    trackName === 'closing' ? closingTrack : null;
+        // We cut the FINAL buffer (what the user sees)
+        const currentFinal = getTrackBuffer(trackName,
+            trackName === 'voice' ? generatedAudio :
+                trackName === 'opening' ? openingTrack?.buffer || null :
+                    trackName === 'background' ? backgroundTrack?.buffer || null :
+                        trackName === 'closing' ? closingTrack?.buffer || null : null
+        );
 
-        if (!originalTrack) return;
+        if (!currentFinal) return;
 
-        // For voice, we cut the BASE buffer (generatedAudio or previous edit), not the processed one.
-        // But processedBuffers['voice'] holds the base edit.
-        const currentBase = trackName === 'voice' ? (processedBuffers['voice'] || generatedAudio) : getTrackBuffer(trackName, originalTrack.buffer);
-
-        if (!currentBase) return;
-
-        pushUndo(trackName, { type: 'buffer', data: currentBase });
+        pushUndo(trackName, currentFinal); // Save state BEFORE cut
 
         const { cutAudio } = await import('../utils/audioProcessing');
-        const newBuffer = cutAudio(currentBase, start, end);
+        const newBuffer = cutAudio(currentFinal, start, end);
 
-        setProcessedBuffers(prev => ({ ...prev, [trackName]: newBuffer }));
-    };
-
-    const handleSilenceRemoval = async (trackName: string) => {
-        // Only for non-voice tracks now, as voice uses the toggle
+        // Update BASE buffer with the result
         if (trackName === 'voice') {
-            // Push current params before toggling
-            pushUndo('voice', {
-                type: 'params',
-                data: {
-                    compression: voiceCompression,
-                    echo: voiceEcho,
-                    noiseReduction: voiceNoiseReduction,
-                    volume: volumes.voice,
-                    playbackRate: voicePlaybackRate,
-                    silenceRemoval: voiceSilenceRemoval
-                }
-            });
-            setVoiceSilenceRemoval(prev => !prev);
-            return;
+            // For voice, we need to be careful. processedVoiceBuffer is derived.
+            // If we cut, we are essentially creating a new "generatedAudio" base?
+            // Or we just update processedBuffers['voice'] and let the pipeline pick it up?
+            // The pipeline uses processedVoiceBuffer as base for voice.
+            // processedVoiceBuffer is output of processVoice effect.
+            // If we want to cut voice, we should probably update generatedAudio? 
+            // OR update processedBuffers['voice'] and have processVoice use it.
+            // processVoice ALREADY uses processedBuffers['voice'] if it exists!
+            setProcessedBuffers(prev => ({ ...prev, [trackName]: newBuffer }));
+        } else {
+            setProcessedBuffers(prev => ({ ...prev, [trackName]: newBuffer }));
         }
 
-        const originalTrack = trackName === 'opening' ? openingTrack :
-            trackName === 'background' ? backgroundTrack :
-                trackName === 'closing' ? closingTrack : null;
+        // Disable silence removal since it's baked in (or to avoid double application)
+        setSilenceActive(prev => ({ ...prev, [trackName]: false }));
+    };
 
-        if (!originalTrack) return;
+    const handleSilenceToggle = (trackName: string) => {
+        setSilenceActive(prev => ({ ...prev, [trackName]: !prev[trackName as keyof typeof silenceActive] }));
+    };
 
-        const currentBase = getTrackBuffer(trackName, originalTrack.buffer);
-        if (!currentBase) return;
-
-        pushUndo(trackName, { type: 'buffer', data: currentBase });
-
-        const { removeSilence } = await import('../utils/audioProcessing');
-        const newBuffer = removeSilence(currentBase, -40, 0.15, 0.1);
-
-        setProcessedBuffers(prev => ({ ...prev, [trackName]: newBuffer }));
+    const handleSilenceThresholdChange = (trackName: string, value: number) => {
+        setSilenceThresholds(prev => ({ ...prev, [trackName]: value }));
     };
 
     const handleUndo = (trackName: string) => {
@@ -520,21 +393,9 @@ export const Mixer: React.FC<MixerProps> = ({
             if (!stack || stack.length === 0) return prev;
 
             const newStack = [...stack];
-            const item = newStack.pop();
+            const previousBuffer = newStack.pop();
 
-            if (item) {
-                if (item.type === 'buffer') {
-                    setProcessedBuffers(bufPrev => ({ ...bufPrev, [trackName]: item.data }));
-                } else if (item.type === 'params' && trackName === 'voice') {
-                    const params = item.data;
-                    setVoiceCompression(params.compression);
-                    setVoiceEcho(params.echo);
-                    setVoiceNoiseReduction(params.noiseReduction);
-                    setVolumes(v => ({ ...v, voice: params.volume }));
-                    setVoicePlaybackRate(params.playbackRate);
-                    setVoiceSilenceRemoval(params.silenceRemoval);
-                }
-            }
+            setProcessedBuffers(bufPrev => ({ ...bufPrev, [trackName]: previousBuffer! }));
 
             return { ...prev, [trackName]: newStack };
         });
@@ -568,15 +429,18 @@ export const Mixer: React.FC<MixerProps> = ({
     const isInitialLoad = useRef(true);
     useEffect(() => {
         if (preloadedTracks.length > 0 && isInitialLoad.current) {
-            const defaultTrack = preloadedTracks[0];
-            setBackgroundTrack({
-                buffer: defaultTrack.buffer,
-                fileName: defaultTrack.name,
-            });
-            setSelectedBackgroundName(defaultTrack.name);
+            // Only set default if we DON'T have a saved state
+            if (!savedMixerState?.selectedBackgroundName) {
+                const defaultTrack = preloadedTracks[0];
+                setBackgroundTrack({
+                    buffer: defaultTrack.buffer,
+                    fileName: defaultTrack.name,
+                });
+                setSelectedBackgroundName(defaultTrack.name);
+            }
             isInitialLoad.current = false;
         }
-    }, [preloadedTracks]);
+    }, [preloadedTracks, savedMixerState]);
 
     // Cleanup
     const stopPreview = useCallback(() => {
@@ -665,13 +529,6 @@ export const Mixer: React.FC<MixerProps> = ({
     };
 
     const handleBackgroundSelect = (trackName: string) => {
-        if (trackName === 'none') {
-            setBackgroundTrack(null);
-            setSelectedBackgroundName('none');
-            setMixedPreviewBuffer(null);
-            return;
-        }
-
         const selectedTrack = preloadedTracks.find(t => t.name === trackName);
         if (selectedTrack) {
             setBackgroundTrack({
@@ -776,14 +633,44 @@ export const Mixer: React.FC<MixerProps> = ({
         }
     };
 
+    // Real-time Mixing Effect
+    useEffect(() => {
+        const runMix = async () => {
+            // Only mix if we have at least one track
+            if (!processedVoiceBuffer && !openingTrack && !backgroundTrack && !closingTrack) return;
+
+            await generateMix();
+        };
+
+        const timeoutId = setTimeout(runMix, 300); // Debounce mix generation
+        return () => clearTimeout(timeoutId);
+    }, [
+        // Dependencies that affect the mix
+        finalBuffers, // Use final buffers (with silence removed)
+        volumes,
+        mutes,
+        crossfadeInDuration,
+        crossfadeOutDuration,
+        fadeInDuration,
+        fadeOutDuration,
+        introDuration,
+        outroDuration,
+        globalFadeIn,
+        globalFadeOut,
+        openingTrack, // Need these for existence checks
+        backgroundTrack,
+        closingTrack,
+        processedVoiceBuffer // Fallback if not in finalBuffers yet
+    ]);
+
     // Mixing Logic (Generate Mix Buffer)
     const generateMix = async () => {
-        setIsPreparingMix(true);
+        // setIsPreparingMix(true); // Don't show loading spinner for real-time updates, it flickers too much
         setError(null);
         try {
-            // Use processedVoiceBuffer directly
-            const voiceBuffer = processedVoiceBuffer;
-            if (!voiceBuffer) throw new Error("No voice buffer");
+            // Use FINAL buffers
+            const voiceBuffer = getTrackBuffer('voice', processedVoiceBuffer);
+            if (!voiceBuffer) return; // Can happen during init
 
             const openingBuffer = getTrackBuffer('opening', openingTrack?.buffer || null);
             const backgroundBuffer = getTrackBuffer('background', backgroundTrack?.buffer || null);
@@ -985,48 +872,74 @@ export const Mixer: React.FC<MixerProps> = ({
         URL.revokeObjectURL(url);
     };
 
-    // Real-time Mixing Effect
     useEffect(() => {
-        const triggerMix = async () => {
-            if (isMixing) return; // Avoid re-triggering if already mixing
-
-            // Debounce is handled by the timeout below, but we also check if we have enough data
-            if (!processedVoiceBuffer) return;
-
-            await generateMix();
-        };
-
-        const timeoutId = setTimeout(triggerMix, 500); // 500ms debounce
-        return () => clearTimeout(timeoutId);
-    }, [
-        volumes,
-        mutes,
-        crossfadeInDuration,
-        crossfadeOutDuration,
-        introDuration,
-        outroDuration,
-        openingTrack,
-        backgroundTrack,
-        closingTrack,
-        voicePlaybackRate,
-        voiceCompression,
-        voiceEcho,
-        generatedAudio,
-        processedBuffers,
-        globalFadeIn,
-        globalFadeOut,
-        processedVoiceBuffer // Important: Re-mix when voice processing finishes
-    ]);
-
-    useEffect(() => {
-        // Reset mix preview when playing stops or changes significantly
+        setMixedPreviewBuffer(null);
         if (mixIsPlaying) stopMixPlayback();
     }, [volumes, mutes, crossfadeInDuration, crossfadeOutDuration, introDuration, outroDuration, openingTrack, backgroundTrack, closingTrack, voicePlaybackRate, voiceCompression, voiceEcho, generatedAudio, processedBuffers, globalFadeIn, globalFadeOut]);
 
     return (
         <div className="space-y-8">
+
+
+            {/* Track Uploaders (Opening/Closing) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Opening */}
+                <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-700">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Abertura</h3>
+                        {openingTrack && (
+                            <button onClick={() => setOpeningTrack(null)} className="text-red-400 hover:text-red-300">
+                                <TrashIcon className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                    {openingTrack ? (
+                        <div className="flex items-center p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
+                            <MusicIcon className="w-8 h-8 text-indigo-400 mr-3" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-white truncate">{openingTrack.fileName}</p>
+                                <p className="text-xs text-indigo-300">{openingTrack.buffer.duration.toFixed(1)}s</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-slate-700 rounded-xl hover:border-indigo-500 hover:bg-slate-800 transition-all cursor-pointer group">
+                            <UploadIcon className="w-6 h-6 text-slate-500 group-hover:text-indigo-400 mb-2" />
+                            <span className="text-xs text-slate-500 group-hover:text-slate-300">Carregar Abertura</span>
+                            <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleFileChange(e, 'opening')} />
+                        </label>
+                    )}
+                </div>
+
+                {/* Closing */}
+                <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-700">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Fechamento</h3>
+                        {closingTrack && (
+                            <button onClick={() => setClosingTrack(null)} className="text-red-400 hover:text-red-300">
+                                <TrashIcon className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                    {closingTrack ? (
+                        <div className="flex items-center p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl">
+                            <MusicIcon className="w-8 h-8 text-indigo-400 mr-3" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-white truncate">{closingTrack.fileName}</p>
+                                <p className="text-xs text-indigo-300">{closingTrack.buffer.duration.toFixed(1)}s</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <label className="flex flex-col items-center justify-center h-24 border-2 border-dashed border-slate-700 rounded-xl hover:border-indigo-500 hover:bg-slate-800 transition-all cursor-pointer group">
+                            <UploadIcon className="w-6 h-6 text-slate-500 group-hover:text-indigo-400 mb-2" />
+                            <span className="text-xs text-slate-500 group-hover:text-slate-300">Carregar Fechamento</span>
+                            <input type="file" accept="audio/*" className="hidden" onChange={(e) => handleFileChange(e, 'closing')} />
+                        </label>
+                    )}
+                </div>
+            </div>
+
             {/* Mixer Controls */}
-            <div className="bg-slate-800 p-4 md:p-6 rounded-2xl shadow-xl border border-slate-700">
+            <div className="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700">
                 <h3 className="text-lg font-bold text-white mb-6 flex items-center">
                     <SlidersIcon className="w-5 h-5 mr-2 text-indigo-500" />
                     Mixagem Profissional
@@ -1046,8 +959,10 @@ export const Mixer: React.FC<MixerProps> = ({
                             onPreviewToggle={() => togglePreview('voice')}
                             isPreviewing={previewingTrack === 'voice'}
                             onCut={(s, e) => handleCut('voice', s, e)}
-                            onSilenceRemovalToggle={() => handleSilenceRemoval('voice')}
-                            isSilenceRemovalActive={voiceSilenceRemoval}
+                            onSilenceRemovalToggle={() => handleSilenceToggle('voice')}
+                            isSilenceRemovalActive={silenceActive.voice}
+                            silenceThreshold={silenceThresholds.voice}
+                            onSilenceThresholdChange={(v) => handleSilenceThresholdChange('voice', v)}
                             fadeIn={voiceFadeIn}
                             fadeOut={voiceFadeOut}
                             onFadeInChange={setVoiceFadeIn}
@@ -1060,36 +975,11 @@ export const Mixer: React.FC<MixerProps> = ({
                         />
 
                         {/* Voice Effects Panel */}
-                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 ml-0 md:ml-4 space-y-4 mt-4 md:mt-0">
-                            <div className="flex justify-between items-center">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center">
-                                    <WandIcon className="w-3 h-3 mr-2" />
-                                    Efeitos Locução
-                                </h4>
-                                <button
-                                    onClick={() => {
-                                        // Push current params before applying magic
-                                        pushUndo('voice', {
-                                            type: 'params',
-                                            data: {
-                                                compression: voiceCompression,
-                                                echo: voiceEcho,
-                                                noiseReduction: voiceNoiseReduction,
-                                                volume: volumes.voice,
-                                                playbackRate: voicePlaybackRate,
-                                                silenceRemoval: voiceSilenceRemoval
-                                            }
-                                        });
-                                        setVoiceCompression(prev => Math.min(prev + 0.1, 1));
-                                        setVoiceNoiseReduction(prev => Math.min(prev + 0.1, 1));
-                                        setVolumes(prev => ({ ...prev, voice: Math.min(prev.voice + 0.1, 1.5) }));
-                                    }}
-                                    className="flex items-center px-3 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white text-xs font-bold rounded-full shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-105 active:scale-95"
-                                >
-                                    <WandIcon className="w-3 h-3 mr-1.5" />
-                                    Mágica (+10%)
-                                </button>
-                            </div>
+                        <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 ml-4 space-y-4">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center">
+                                <WandIcon className="w-3 h-3 mr-2" />
+                                Efeitos Locução
+                            </h4>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 {/* Speed */}
                                 <div>
@@ -1130,27 +1020,16 @@ export const Mixer: React.FC<MixerProps> = ({
                                         className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-xs text-slate-500 mb-1">Redutor de Ruído ({(voiceNoiseReduction * 100).toFixed(0)}%)</label>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="1"
-                                        step="0.1"
-                                        value={voiceNoiseReduction}
-                                        onChange={(e) => setVoiceNoiseReduction(parseFloat(e.target.value))}
-                                        className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                                    />
-                                </div>
                             </div>
                         </div>
                     </div>
 
                     {/* 2. Background Track Selection Carousel */}
                     <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-700">
+                        {console.log("DEBUG: Mixer Component Rendered - VERSION NEW")}
                         <h4 className="text-lg font-bold text-white mb-4 flex items-center">
                             <MusicIcon className="w-5 h-5 mr-2 text-emerald-500" />
-                            Escolha sua Trilha
+                            Seleção de Trilha
                         </h4>
                         <BackgroundTrackCarousel
                             tracks={backgroundTracks}
@@ -1170,11 +1049,11 @@ export const Mixer: React.FC<MixerProps> = ({
                         />
                     </div>
 
-                    {/* 3. Background Track Channel */}
-                    {selectedBackgroundName && (
+                    {/* 3. Background Track Channel (only if selected and not 'none') */}
+                    {selectedBackgroundName && selectedBackgroundName !== 'none' && backgroundTrack && (
                         <TrackChannel
-                            title="Trilha de Fundo"
-                            track={selectedBackgroundName !== 'none' && backgroundTrack ? { ...backgroundTrack, buffer: getTrackBuffer('background', backgroundTrack.buffer)! } : null}
+                            title="Volume da Trilha"
+                            track={{ ...backgroundTrack, buffer: getTrackBuffer('background', backgroundTrack.buffer)! }}
                             volume={volumes.background}
                             isMuted={mutes.background}
                             onVolumeChange={(v) => setVolumes(prev => ({ ...prev, background: v }))}
@@ -1183,8 +1062,11 @@ export const Mixer: React.FC<MixerProps> = ({
                             onPreviewToggle={() => togglePreview('background')}
                             isPreviewing={previewingTrack === 'background'}
                             onCut={(s, e) => handleCut('background', s, e)}
-                            onSilenceRemovalToggle={() => handleSilenceRemoval('background')}
-                            markers={selectedBackgroundName !== 'none' && backgroundTrack ? [
+                            onSilenceRemovalToggle={() => handleSilenceToggle('background')}
+                            isSilenceRemovalActive={silenceActive.background}
+                            silenceThreshold={silenceThresholds.background}
+                            onSilenceThresholdChange={(v) => handleSilenceThresholdChange('background', v)}
+                            markers={backgroundTrack ? [
                                 { time: introDuration, color: '#a855f7', label: 'Intro' },
                                 { time: backgroundTrack.buffer.duration - outroDuration, color: '#f43f5e', label: 'Outro' }
                             ] : []}
@@ -1205,11 +1087,12 @@ export const Mixer: React.FC<MixerProps> = ({
                         onPreviewToggle={() => togglePreview('opening')}
                         isPreviewing={previewingTrack === 'opening'}
                         onCut={(s, e) => handleCut('opening', s, e)}
-                        onSilenceRemovalToggle={() => handleSilenceRemoval('opening')}
+                        onSilenceRemovalToggle={() => handleSilenceToggle('opening')}
+                        isSilenceRemovalActive={silenceActive.opening}
+                        silenceThreshold={silenceThresholds.opening}
+                        onSilenceThresholdChange={(v) => handleSilenceThresholdChange('opening', v)}
                         onUndo={() => handleUndo('opening')}
                         canUndo={!!undoStacks['opening']?.length}
-                        onUpload={(e) => handleFileChange(e, 'opening')}
-                        uploadLabel="Carregar Abertura"
                     />
 
                     {/* 5. Closing Track */}
@@ -1220,15 +1103,16 @@ export const Mixer: React.FC<MixerProps> = ({
                         isMuted={mutes.closing}
                         onVolumeChange={(v) => setVolumes(prev => ({ ...prev, closing: v }))}
                         onMuteToggle={() => setMutes(prev => ({ ...prev, closing: !prev.closing }))}
-                        color="#f43f5e"
+                        color="#f43f5e" // Rose
                         onPreviewToggle={() => togglePreview('closing')}
                         isPreviewing={previewingTrack === 'closing'}
                         onCut={(s, e) => handleCut('closing', s, e)}
-                        onSilenceRemovalToggle={() => handleSilenceRemoval('closing')}
+                        onSilenceRemovalToggle={() => handleSilenceToggle('closing')}
+                        isSilenceRemovalActive={silenceActive.closing}
+                        silenceThreshold={silenceThresholds.closing}
+                        onSilenceThresholdChange={(v) => handleSilenceThresholdChange('closing', v)}
                         onUndo={() => handleUndo('closing')}
                         canUndo={!!undoStacks['closing']?.length}
-                        onUpload={(e) => handleFileChange(e, 'closing')}
-                        uploadLabel="Carregar Fechamento"
                     />
                 </div>
 
@@ -1236,7 +1120,7 @@ export const Mixer: React.FC<MixerProps> = ({
                 <div className="mt-8 p-4 bg-slate-900/50 rounded-xl border border-slate-700 grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div>
                         <label className="flex justify-between text-sm font-bold text-slate-400 mb-2">
-                            <span>Transição entre Abertura e Trilha</span>
+                            <span>Crossfade Entrada</span>
                             <span className="text-indigo-400">{crossfadeInDuration}s</span>
                         </label>
                         <input
@@ -1252,7 +1136,7 @@ export const Mixer: React.FC<MixerProps> = ({
                     </div>
                     <div>
                         <label className="flex justify-between text-sm font-bold text-slate-400 mb-2">
-                            <span>Transição entre trilha e fechamento</span>
+                            <span>Crossfade Saída</span>
                             <span className="text-indigo-400">{crossfadeOutDuration}s</span>
                         </label>
                         <input
@@ -1284,7 +1168,7 @@ export const Mixer: React.FC<MixerProps> = ({
                     </div>
                     <div>
                         <label className="flex justify-between text-sm font-bold text-slate-400 mb-2">
-                            <span>Saída da Trilha</span>
+                            <span>Outro da Trilha</span>
                             <span className="text-indigo-400">{outroDuration}s</span>
                         </label>
                         <input
@@ -1324,7 +1208,6 @@ export const Mixer: React.FC<MixerProps> = ({
                         </label>
                         <input
                             type="range"
-                            dir="rtl"
                             min="0"
                             max="5"
                             step="0.5"
@@ -1338,31 +1221,27 @@ export const Mixer: React.FC<MixerProps> = ({
 
             {/* Final Mix Visualization */}
             <div className="bg-slate-900 rounded-2xl p-6 border border-slate-800 shadow-2xl">
-                <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                    <h3 className="text-lg font-bold text-white flex items-center self-start md:self-center">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-lg font-bold text-white flex items-center">
                         <WandIcon className="w-5 h-5 mr-2 text-indigo-500" />
                         Resultado Final
                     </h3>
-                    <div className="flex gap-4 items-center w-full md:w-auto justify-between md:justify-end">
+                    <div className="flex gap-3">
                         <button
                             onClick={toggleMixPlayPause}
                             disabled={isPreparingMix}
-                            className={`flex items-center justify-center w-12 h-12 rounded-full transition-all shadow-lg ${mixIsPlaying ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/30' : 'bg-white text-indigo-600 hover:bg-indigo-50'}`}
-                            title={mixIsPlaying ? 'Pausar' : 'Ouvir Resultado'}
+                            className="flex items-center px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold transition-all shadow-lg shadow-indigo-500/20"
                         >
-                            {isPreparingMix ? <LoadingSpinner className="w-5 h-5 text-indigo-600" /> : mixIsPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6 ml-1" />}
+                            {isPreparingMix ? <LoadingSpinner className="w-4 h-4 mr-2" /> : mixIsPlaying ? <PauseIcon className="w-4 h-4 mr-2" /> : <PlayIcon className="w-4 h-4 mr-2" />}
+                            {mixIsPlaying ? 'Pausar' : 'Ouvir Resultado'}
                         </button>
-
                         <button
                             onClick={handleDownload}
                             disabled={isPreparingMix}
-                            className="flex flex-col items-start px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-emerald-500/20"
+                            className="flex items-center px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-bold transition-all"
                         >
-                            <div className="flex items-center">
-                                <DownloadIcon className="w-5 h-5 mr-2" />
-                                <span>Baixar Audio Pronto</span>
-                            </div>
-                            <span className="text-[10px] opacity-80 font-mono mt-0.5">Mp3 - Stereo - 44.1kHz</span>
+                            <DownloadIcon className="w-4 h-4 mr-2" />
+                            Baixar MP3
                         </button>
                     </div>
                 </div>

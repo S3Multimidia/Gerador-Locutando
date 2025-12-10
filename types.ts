@@ -8,7 +8,7 @@ export interface Voice {
   prompt: string;
   imageUrl: string;
   demoUrl: string;
-  defaultTrackUrl?: string;
+  defaultTrackUrl?: string; // Optional default background track
 }
 
 export interface TrackInfo {
@@ -26,10 +26,33 @@ export interface User {
   status: 'Ativo' | 'Inativo';
   role: Role;
   password?: string;
+  wallet?: Wallet; // Optional wallet info
 }
 
 export interface Client {
   id: string;
   name: string;
   instructions: string; // Endereço, telefone, guia de pronúncia, etc.
+}
+
+// --- Backend Types ---
+
+export interface Wallet {
+  balance: number; // Decimal in backend, number in JS
+  currency: string;
+}
+
+export interface Transaction {
+  id: string;
+  type: 'CREDIT' | 'DEBIT';
+  amount: number;
+  description: string;
+  date: string;
+}
+
+export interface DepositResponse {
+  external_id: string;
+  qr_code: string;       // Pix Copy Paste
+  qr_code_base64: string; // QR Image
+  amount: number;
 }

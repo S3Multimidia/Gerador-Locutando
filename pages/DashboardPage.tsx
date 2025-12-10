@@ -8,6 +8,9 @@ import { Voice, TrackInfo } from '../types';
 import { useVoiceGenerator } from '../hooks/useVoiceGenerator';
 import { useClients } from '../hooks/useClients';
 import { DynamicLoadingMessage } from '../components/DynamicLoadingMessage';
+import { useDashboardPersistence } from '../hooks/useDashboardPersistence';
+import { BackendService } from '../services/backend';
+import { DepositModal } from '../components/Wallet/DepositModal';
 
 interface DashboardPageProps {
     availableVoices: Voice[];
@@ -20,13 +23,56 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
     const [text, setText] = useState<string>('');
     const [isExpertGenerated, setIsExpertGenerated] = useState<boolean>(false);
     const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
+
     const [activeTab, setActiveTab] = useState<'generate' | 'record'>('generate');
+    const [showDepositModal, setShowDepositModal] = useState(false);
+    const [walletBalance, setWalletBalance] = useState<number>(0);
+
+    useEffect(() => {
+        BackendService.getWalletBalance().then(w => setWalletBalance(w.balance || 0));
+    }, []);
 
     // Audio Cuts State
     const [cutStartSec, setCutStartSec] = useState<number>(0);
     const [cutEndSec, setCutEndSec] = useState<number>(0);
     const [finalCutStartSec, setFinalCutStartSec] = useState<number>(0);
     const [finalCutEndSec, setFinalCutEndSec] = useState<number>(0);
+
+    const { dashboardState, updateDashboardState, isPersistenceLoaded } = useDashboardPersistence();
+
+    // Initialize state from persistence once loaded
+    useEffect(() => {
+        if (isPersistenceLoaded) {
+            if (dashboardState.text) setText(dashboardState.text);
+            if (dashboardState.activeTab) setActiveTab(dashboardState.activeTab);
+            if (dashboardState.cutStartSec) setCutStartSec(dashboardState.cutStartSec);
+            if (dashboardState.cutEndSec) setCutEndSec(dashboardState.cutEndSec);
+            if (dashboardState.finalCutStartSec) setFinalCutStartSec(dashboardState.finalCutStartSec);
+            if (dashboardState.finalCutEndSec) setFinalCutEndSec(dashboardState.finalCutEndSec);
+
+            if (dashboardState.selectedVoiceId && availableVoices.length > 0) {
+                const persistedVoice = availableVoices.find(v => v.id === dashboardState.selectedVoiceId);
+                if (persistedVoice) {
+                    setSelectedVoice(persistedVoice);
+                }
+            }
+        }
+    }, [isPersistenceLoaded, availableVoices, dashboardState.text, dashboardState.activeTab, dashboardState.cutStartSec, dashboardState.cutEndSec, dashboardState.finalCutStartSec, dashboardState.finalCutEndSec, dashboardState.selectedVoiceId]);
+
+    // Update persistence when local state changes
+    useEffect(() => {
+        if (isPersistenceLoaded) {
+            updateDashboardState({
+                text,
+                activeTab,
+                cutStartSec,
+                cutEndSec,
+                finalCutStartSec,
+                finalCutEndSec,
+                selectedVoiceId: selectedVoice?.id || null
+            });
+        }
+    }, [text, activeTab, cutStartSec, cutEndSec, finalCutStartSec, finalCutEndSec, selectedVoice, isPersistenceLoaded]);
 
     const mixerRef = useRef<HTMLDivElement>(null);
 
@@ -56,16 +102,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
         "Renderizando arquivo final..."
     ];
 
-    // Sync selected voice availability
+    // Sync selected voice availability and data
     useEffect(() => {
         if (availableVoices.length === 0) {
             setSelectedVoice(null);
             return;
         }
-        if (!selectedVoice) return;
-        const isSelectedVoiceAvailable = availableVoices.some(v => v.id === selectedVoice.id);
-        if (!isSelectedVoiceAvailable) {
-            setSelectedVoice(null);
+        if (selectedVoice) {
+            const updatedVoice = availableVoices.find(v => v.id === selectedVoice.id);
+            if (updatedVoice) {
+                // Update if the object reference changed (meaning data might have changed)
+                if (updatedVoice !== selectedVoice) {
+                    setSelectedVoice(updatedVoice);
+                }
+            } else {
+                // Voice no longer exists
+                setSelectedVoice(null);
+            }
         }
     }, [availableVoices, selectedVoice]);
 
@@ -99,6 +152,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                         <span className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-3 text-indigo-400 text-sm">🎙️</span>
                         Estúdio de Voz
                     </h2>
+
+                    {/* Wallet Info */}
+                    <div className="mb-6 bg-slate-900/50 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                        <div>
+                            <p className="text-slate-400 text-xs uppercase tracking-wider font-semibold">Seu Saldo</p>
+                            <p className="text-2xl font-bold text-green-400">R$ {walletBalance.toFixed(2)}</p>
+                        </div>
+                        <button
+                            onClick={() => setShowDepositModal(true)}
+                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center"
+                        >
+                            <span>+ Adicionar</span>
+                        </button>
+                    </div>
+
+                    <DepositModal isOpen={showDepositModal} onClose={() => setShowDepositModal(false)} />
 
                     {/* Tab Navigation */}
                     <div className="mb-6 bg-slate-900/50 p-1 rounded-lg inline-flex w-full">
@@ -160,7 +229,37 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                                 <DynamicLoadingMessage messages={GENERATION_MESSAGES} interval={3000} />
                             </div>
                         </div>
+                    ) : finalMixedAudio ? (
+                        // TURBO MODE UI
+                        <div className="bg-slate-800 p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-700 animate-fade-in">
+                            <h2 className="text-2xl font-bold text-white mb-2 flex items-center">
+                                <span className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center mr-3 text-orange-500 text-sm">🚀</span>
+                                Resultado Turbo
+                            </h2>
+                            <p className="text-sm text-slate-400 mb-6 pl-11">
+                                Seu áudio foi gerado, mixado e masterizado automaticamente.
+                            </p>
+                            <AudioResult
+                                audioBuffer={finalMixedAudio}
+                                audioContext={audioContext!}
+                                setGeneratedAudio={setFinalMixedAudio}
+                                cutStartSec={finalCutStartSec}
+                                cutEndSec={finalCutEndSec}
+                                setCutStartSec={setFinalCutStartSec}
+                                setCutEndSec={setFinalCutEndSec}
+                                variant="mix"
+                            />
+                            <div className="mt-6 flex justify-end">
+                                <button
+                                    onClick={() => setFinalMixedAudio(null)}
+                                    className="text-sm text-slate-500 hover:text-white underline"
+                                >
+                                    Voltar / Gerar Novo
+                                </button>
+                            </div>
+                        </div>
                     ) : generatedAudio && audioContext ? (
+                        // EXPERT MODE UI
                         <div ref={mixerRef} className="bg-slate-800 p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-700 animate-fade-in">
                             <h2 className="text-2xl font-bold text-white mb-2 flex items-center">
                                 <span className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center mr-3 text-indigo-400 text-sm">🎛️</span>
@@ -192,7 +291,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                                     />
                                 )}
                             />
-                        </div>
+                        </div >
                     ) : (
                         <div className="bg-slate-800/50 border-2 border-dashed border-slate-700 p-12 rounded-2xl text-center flex flex-col items-center justify-center min-h-[400px]">
                             <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mb-4">
@@ -204,8 +303,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                             </p>
                         </div>
                     )}
-                </div>
-            </div>
-        </main>
+                </div >
+            </div >
+        </main >
     );
 };

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { DownloadIcon, PlayIcon, PauseIcon, LoadingSpinner } from './IconComponents';
 import { useGoogleDrive } from '../hooks/useGoogleDrive';
+import { FinalMixWaveform } from './FinalMixWaveform';
 
 interface AudioResultProps {
   audioBuffer: AudioBuffer;
@@ -78,16 +79,8 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
   const setStartSec = setCutStartSec;
   const setEndSec = setCutEndSec;
   const [playheadSec, setPlayheadSec] = useState<number>(0);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const draggingRef = useRef<boolean>(false);
-  const dragTargetRef = useRef<'start' | 'end' | null>(null);
   const playStartRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
-  const [zoom, setZoom] = useState<number>(1);
-  const [viewCenter, setViewCenter] = useState<number>(0);
-  const [zoomHint, setZoomHint] = useState<string>('');
-  const [zoomEnabled, setZoomEnabled] = useState<boolean>(false);
-  const hoverTimerRef = useRef<number | null>(null);
 
   // Google Drive Integration
   const { login, uploadFile, isAuthenticated, isInitialized } = useGoogleDrive();
@@ -131,7 +124,7 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
           // Auto-save logic
           if (autoSaveDrive && isAuthenticated) {
             setUploadStatus('uploading');
-            const filename = `locucao_${new Date().toISOString().replace(/[:.]/g, '-')}.mp3`;
+            const filename = 'locucao_' + new Date().toISOString().replace(/[:.]/g, '-') + '.mp3';
             uploadFile(mp3Blob, filename)
               .then(() => {
                 if (isMounted) setUploadStatus('success');
@@ -154,38 +147,9 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
     if (showCut) {
       setStartSec(0);
       setEndSec(audioBuffer.duration);
-      setViewCenter(audioBuffer.duration / 2);
-      setZoom(1);
     }
 
     createDownload();
-
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const w = canvas.width;
-        const h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
-        const data = audioBuffer.getChannelData(0);
-        const step = Math.ceil(data.length / w);
-        ctx.strokeStyle = '#10b981';
-        ctx.beginPath();
-        for (let i = 0; i < w; i++) {
-          let min = 1;
-          let max = -1;
-          const start = i * step;
-          for (let j = 0; j < step && start + j < data.length; j++) {
-            const v = data[start + j];
-            if (v < min) min = v;
-            if (v > max) max = v;
-          }
-          const y = (1 - max) * h * 0.5;
-          if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
-        }
-        ctx.stroke();
-      }
-    }
 
     return () => {
       isMounted = false;
@@ -199,7 +163,7 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
   useEffect(() => {
     if (autoSaveDrive && isAuthenticated && mp3BlobRef.current && downloadUrl && uploadStatus !== 'uploading' && uploadStatus !== 'success') {
       setUploadStatus('uploading');
-      const filename = `locucao_${new Date().toISOString().replace(/[:.]/g, '-')}.mp3`;
+      const filename = 'locucao_' + new Date().toISOString().replace(/[:.]/g, '-') + '.mp3';
       uploadFile(mp3BlobRef.current, filename)
         .then(() => {
           setUploadStatus('success');
@@ -211,14 +175,6 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
     }
   }, [autoSaveDrive, isAuthenticated, downloadUrl, uploadFile, uploadStatus]);
 
-
-  useEffect(() => {
-    const c = canvasRef.current;
-    const setSize = () => { if (c) { c.width = c.clientWidth; c.height = 160; } };
-    setSize();
-    window.addEventListener('resize', setSize);
-    return () => { window.removeEventListener('resize', setSize); };
-  }, []);
 
   const togglePlayPause = () => {
     if (isPlaying) {
@@ -236,241 +192,97 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContext.destination);
-      const s = showCut ? Math.max(0, Math.min(startSec, audioBuffer.duration)) : 0;
-      const e = showCut ? Math.max(s, Math.min(endSec || audioBuffer.duration, audioBuffer.duration)) : audioBuffer.duration;
-      playStartRef.current = audioContext.currentTime;
-      setPlayheadSec(s);
+
+      const s = playheadSec; // Start from current playhead
+      const duration = audioBuffer.duration;
+
+      playStartRef.current = audioContext.currentTime - s; // Adjust start time to match playhead
+
       const tick = () => {
         if (!playStartRef.current) return;
         const elapsed = audioContext.currentTime - playStartRef.current;
-        const current = Math.min(e, s + elapsed);
-        setPlayheadSec(current);
+
+        if (elapsed >= duration) {
+          setPlayheadSec(0);
+          setIsPlaying(false);
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          return;
+        }
+
+        setPlayheadSec(elapsed);
         if (sourceRef.current) rafRef.current = requestAnimationFrame(tick);
       };
+
       source.onended = () => {
         setIsPlaying(false);
         sourceRef.current = null;
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        setPlayheadSec(s);
+        // Don't reset playhead here to allow pausing and resuming, 
+        // but if it reached the end, tick will handle it.
       };
-      source.start(0, s, e - s);
+
+      source.start(0, s);
       sourceRef.current = source;
       setIsPlaying(true);
       rafRef.current = requestAnimationFrame(tick);
     }
   };
 
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!showCut) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const w = canvas.width;
-    const sX = (startSec / audioBuffer.duration) * w;
-    const eX = ((endSec || audioBuffer.duration) / audioBuffer.duration) * w;
-    const near = 8;
-    if (Math.abs(x - sX) < near) {
-      dragTargetRef.current = 'start';
-      draggingRef.current = true;
-    } else if (Math.abs(x - eX) < near) {
-      dragTargetRef.current = 'end';
-      draggingRef.current = true;
-    } else {
-      dragTargetRef.current = 'end';
-      draggingRef.current = true;
-      const span = Math.min(audioBuffer.duration, audioBuffer.duration / Math.max(1, zoom));
-      const startView = Math.max(0, Math.min(audioBuffer.duration - span, viewCenter - span / 2));
-      const t = Math.max(0, Math.min(audioBuffer.duration, startView + (x / w) * span));
-      setStartSec(t);
-    }
-  };
-
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const w = canvas.width;
-
-    if (showCut && draggingRef.current) {
-      const span = Math.min(audioBuffer.duration, audioBuffer.duration / Math.max(1, zoom));
-      const startView = Math.max(0, Math.min(audioBuffer.duration - span, viewCenter - span / 2));
-      const t = Math.max(0, Math.min(audioBuffer.duration, startView + (x / w) * span));
-      if (dragTargetRef.current === 'start') {
-        setStartSec(Math.min(t, endSec || audioBuffer.duration));
-      } else if (dragTargetRef.current === 'end') {
-        setEndSec(Math.max(t, startSec));
+  const handleSeek = (time: number) => {
+    setPlayheadSec(time);
+    if (isPlaying) {
+      // Restart playback from new time
+      if (sourceRef.current) {
+        sourceRef.current.onended = null;
+        try { sourceRef.current.stop(); } catch { }
+        sourceRef.current = null;
       }
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+
+      playStartRef.current = audioContext.currentTime - time;
+
+      const tick = () => {
+        if (!playStartRef.current) return;
+        const elapsed = audioContext.currentTime - playStartRef.current;
+        if (elapsed >= audioBuffer.duration) {
+          setPlayheadSec(0);
+          setIsPlaying(false);
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          return;
+        }
+        setPlayheadSec(elapsed);
+        if (sourceRef.current) rafRef.current = requestAnimationFrame(tick);
+      };
+
+      source.onended = () => {
+        setIsPlaying(false);
+        sourceRef.current = null;
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      };
+
+      source.start(0, time);
+      sourceRef.current = source;
+      rafRef.current = requestAnimationFrame(tick);
     }
   };
 
-  const handleCanvasMouseUp = () => {
-    draggingRef.current = false;
-    dragTargetRef.current = null;
-    if (hoverTimerRef.current) { window.clearTimeout(hoverTimerRef.current); hoverTimerRef.current = null; }
-    setZoomEnabled(false);
-  };
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const w = canvas.width;
-    const h = canvas.height;
-    const mid = h / 2;
-    const data = audioBuffer.getChannelData(0);
-
-    const span = Math.min(audioBuffer.duration, audioBuffer.duration / Math.max(1, zoom));
-    const startView = Math.max(0, Math.min(audioBuffer.duration - span, viewCenter - span / 2));
-    const startIdx = Math.floor(startView / audioBuffer.duration * data.length);
-    const visibleLen = Math.floor(span / audioBuffer.duration * data.length);
-    const step = Math.max(1, Math.ceil(visibleLen / w));
-
-    ctx.clearRect(0, 0, w, h);
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    if (variant === 'mix') { grad.addColorStop(0, '#111827'); grad.addColorStop(1, '#1f2937'); }
-    else { grad.addColorStop(0, '#0f172a'); grad.addColorStop(1, '#1e293b'); }
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-
-    const top: number[] = new Array(w);
-    const bottom: number[] = new Array(w);
-    for (let i = 0; i < w; i++) {
-      let min = 1, max = -1;
-      const start = startIdx + i * step;
-      for (let j = 0; j < step && start + j < startIdx + visibleLen; j++) {
-        const v = data[start + j];
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-      const amp = mid - 2;
-      top[i] = mid - (max * amp);
-      bottom[i] = mid - (min * amp);
-    }
-
-    ctx.beginPath();
-    ctx.moveTo(0, top[0]);
-    for (let i = 1; i < w; i++) ctx.lineTo(i, top[i]);
-    for (let i = w - 1; i >= 0; i--) ctx.lineTo(i, bottom[i]);
-    ctx.closePath();
-    ctx.fillStyle = variant === 'mix' ? '#6366f1' : '#10b981';
-    ctx.globalAlpha = 0.85;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = variant === 'mix' ? '#4f46e5' : '#059669';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    if (showCut) {
-      const sX = ((startSec - startView) / span) * w;
-      const eX = (((endSec || audioBuffer.duration) - startView) / span) * w;
-      const sClamped = Math.max(0, Math.min(w, sX));
-      const eClamped = Math.max(0, Math.min(w, eX));
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
-      ctx.fillRect(Math.min(sClamped, eClamped), 0, Math.max(0, Math.abs(eClamped - sClamped)), h);
-      ctx.fillStyle = '#ef4444';
-      if (sX >= 0 && sX <= w) ctx.fillRect(sX - 1, 0, 2, h);
-      if (eX >= 0 && eX <= w) ctx.fillRect(eX - 1, 0, 2, h);
-    }
-
-    const headX = ((playheadSec - startView) / span) * w;
-    ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = 0.9;
-    if (headX >= 0 && headX <= w) ctx.fillRect(headX - 1, 0, 2, h);
-    ctx.globalAlpha = 1;
-  }, [audioBuffer, startSec, endSec, playheadSec, zoom, viewCenter]);
-
-  const handleDeleteSelection = () => {
-    const sr = audioContext.sampleRate;
-    const s = Math.max(0, Math.min(startSec, audioBuffer.duration));
-    const e = Math.max(s, Math.min(endSec || audioBuffer.duration, audioBuffer.duration));
-    if (e - s <= 0.0005) return;
-    const sIdx = Math.floor(s * sr);
-    const eIdx = Math.floor(e * sr);
-    const total = audioBuffer.length;
-    const channels = audioBuffer.numberOfChannels;
-    const out = audioContext.createBuffer(channels, sIdx + (total - eIdx), sr);
-    for (let ch = 0; ch < channels; ch++) {
-      const src = audioBuffer.getChannelData(ch);
-      const dst = out.getChannelData(ch);
-      dst.set(src.subarray(0, sIdx), 0);
-      dst.set(src.subarray(eIdx), sIdx);
-    }
-    if (isPlaying && sourceRef.current) {
-      try { sourceRef.current.stop(); } catch { }
-      sourceRef.current = null;
-    }
-    setIsPlaying(false);
-    setGeneratedAudio(out);
-    setStartSec(0);
-    setEndSec(out.duration);
-    setPlayheadSec(0);
-  };
-
-  const handleZoomSliderChange = (value: number) => {
-    const nz = Math.max(1, Math.min(8, value));
-    setZoom(nz);
-    const s = startSec;
-    const e = (endSec || audioBuffer.duration);
-    const hasSelection = showCut && e > s && (e - s) > 0.001;
-    const center = hasSelection ? (s + e) / 2 : (audioBuffer.duration / 2);
-    setViewCenter(Math.max(0, Math.min(audioBuffer.duration, center)));
-  };
-
-  const handleCanvasWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    if (!zoomEnabled) return;
-    e.preventDefault();
-    const dir = e.deltaY > 0 ? -1 : 1;
-    const nz = Math.max(1, Math.min(8, zoom + dir * 0.2));
-    setZoom(nz);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const w = canvas.width;
-      const span = Math.min(audioBuffer.duration, audioBuffer.duration / Math.max(1, nz));
-      const startView = Math.max(0, Math.min(audioBuffer.duration - span, viewCenter - span / 2));
-      const anchor = Math.max(0, Math.min(audioBuffer.duration, startView + (x / w) * span));
-      setViewCenter(anchor);
-    }
-    setZoomHint(dir > 0 ? 'Zoom +' : 'Zoom -');
-    window.setTimeout(() => setZoomHint(''), 700);
-  };
 
   return (
-    <div className="space-y-4">
-      <div className="bg-slate-900 rounded-lg p-3 relative border border-slate-700" style={{ overscrollBehavior: 'contain' }}>
-        <canvas ref={canvasRef} className="w-full h-32" onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp}></canvas>
-        {showCut && (
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 whitespace-nowrap">Início</span>
-              <input type="range" min={0} max={audioBuffer.duration} step={0.01} value={startSec} onChange={(e) => setStartSec(parseFloat(e.target.value))} className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-500" />
-              <span className="text-xs text-slate-300 w-16 text-right">{startSec.toFixed(2)}s</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 whitespace-nowrap">Fim</span>
-              <input type="range" min={0} max={audioBuffer.duration} step={0.01} value={endSec || audioBuffer.duration} onChange={(e) => setEndSec(parseFloat(e.target.value))} className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-500" />
-              <span className="text-xs text-slate-300 w-16 text-right">{(endSec || audioBuffer.duration).toFixed(2)}s</span>
-            </div>
-          </div>
-        )}
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-xs text-slate-400">Zoom</span>
-          <input type="range" min={1} max={8} step={0.1} value={zoom} onChange={(e) => handleZoomSliderChange(parseFloat(e.target.value))} className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-500" />
-          <span className="text-xs text-slate-300 w-12 text-right">{zoom.toFixed(1)}x</span>
-        </div>
-        <div className="mt-2 text-xs text-slate-500">Duração total: {audioBuffer.duration.toFixed(2)}s</div>
+    <div className="flex flex-col gap-4 w-full">
+      {/* Waveform Visualization */}
+      <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700 shadow-inner">
+        <FinalMixWaveform
+          buffer={audioBuffer}
+          playheadSec={playheadSec}
+          isPlaying={isPlaying}
+          onSeek={handleSeek}
+          height={128}
+        />
       </div>
-      {showCut && (
-        <div className="flex">
-          <button onClick={handleDeleteSelection} className="w-full p-3 bg-red-900/20 text-red-400 font-bold rounded-lg border border-red-900/50 shadow-sm hover:bg-red-900/40 transition-all focus-ring">
-            Cortar Seleção
-          </button>
-        </div>
-      )}
 
       {/* Google Drive Controls */}
       <div className="flex items-center justify-between p-3 bg-slate-800 rounded-lg border border-slate-700">
@@ -540,6 +352,6 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
           )}
         </a>
       </div>
-    </div>
+    </div >
   );
 };

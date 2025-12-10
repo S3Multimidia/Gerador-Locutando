@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import type { Voice, User, TrackInfo } from '../types';
 import { ShieldIcon, UserIcon, MicIcon, MusicIcon, SettingsIcon, TrashIcon, EditIcon, WandIcon, CreditCardIcon, LayoutIcon, SlidersIcon, EyeIcon, EyeOffIcon } from './IconComponents';
 import { useSiteConfig } from '../contexts/SiteConfigContext';
+import { SystemConfigTab } from './Admin/SystemConfigTab';
+import { BackendService } from '../services/backend';
 
 interface AdminPanelProps {
     voices: Voice[];
@@ -16,7 +18,7 @@ interface AdminPanelProps {
     setUsers: React.Dispatch<React.SetStateAction<User[]>>;
 }
 
-type AdminTab = 'users' | 'voices' | 'tracks' | 'settings' | 'site' | 'business';
+type AdminTab = 'users' | 'voices' | 'tracks' | 'settings' | 'site' | 'business' | 'system';
 
 const userInitial: User = { id: 0, name: '', email: '', plan: 'Básico', status: 'Ativo', role: 'user', password: '' };
 
@@ -42,6 +44,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<AdminTab>('users');
     const { config, updateConfig } = useSiteConfig();
+    const [isBackendOnline, setIsBackendOnline] = useState(true);
+
+    useEffect(() => {
+        BackendService.checkHealth().then(online => setIsBackendOnline(online));
+    }, []);
 
     // Voice State
     const [showAddVoiceForm, setShowAddVoiceForm] = useState(false);
@@ -57,6 +64,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const [showAddUserForm, setShowAddUserForm] = useState(false);
     const [newUser, setNewUser] = useState<User>(userInitial);
     const [editingUserId, setEditingUserId] = useState<number | null>(null);
+
+    // Credit Modal State
+    const [showCreditModal, setShowCreditModal] = useState(false);
+    const [creditAmount, setCreditAmount] = useState<number>(0);
+    const [creditUserId, setCreditUserId] = useState<number | null>(null);
+
+    const openCreditModal = (userId: number) => {
+        setCreditUserId(userId);
+        setCreditAmount(0);
+        setShowCreditModal(true);
+    };
+
+    const handleAddCredits = async () => {
+        if (creditUserId && creditAmount > 0) {
+            try {
+                // Assuming BackendService is imported (it might not be in this file, need to check imports)
+                // If not, I'll add the import in the next tool call.
+                // For now, let's use the window alert to confirm flow
+                await BackendService.addCredits(creditUserId, creditAmount);
+                alert(`Sucesso! Adicionado R$ ${creditAmount} ao usuário ${creditUserId}`);
+                setShowCreditModal(false);
+            } catch (error: any) {
+                console.error(error);
+                alert(`Erro ao adicionar créditos: ${error.message}`);
+            }
+        }
+    };
+
     const [editingUser, setEditingUser] = useState<User>(userInitial);
 
     // Settings State
@@ -312,15 +347,56 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{u.role === 'admin' ? 'Admin' : 'Usuário'}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                                <button onClick={() => handleToggleStatus(u.id)} className="text-gray-600 hover:text-gray-900">{u.status === 'Ativo' ? 'Desativar' : 'Ativar'}</button>
+                                                <button onClick={() => handleToggleStatus(u.id)} className={`${u.status === 'Ativo' ? 'text-green-600 hover:text-green-900' : 'text-gray-400 hover:text-gray-600'}`}>
+                                                    {u.status === 'Ativo' ? 'Desativar' : 'Ativar'}
+                                                </button>
                                                 <button onClick={() => startEditUser(u)} className="text-indigo-600 hover:text-indigo-900">Editar</button>
-                                                <button onClick={() => handleDeleteUser(u.id)} className="text-red-600 hover:text-red-900">Excluir</button>
+                                                <button onClick={() => handleDeleteUser(u.id)} className="text-red-400 hover:text-red-300 transition-colors" title="Excluir">
+                                                    <TrashIcon className="w-5 h-5" />
+                                                </button>
+                                                <button onClick={() => openCreditModal(u.id)} className="text-green-500 hover:text-green-400 transition-colors" title="Adicionar Créditos">
+                                                    <CreditCardIcon className="w-5 h-5" />
+                                                </button>
                                             </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
+                        {/* Credit Modal */}
+                        {showCreditModal && (
+                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                                <div className="bg-white p-6 rounded-lg w-96 text-gray-800 shadow-xl border border-gray-200">
+                                    <h3 className="text-lg font-bold mb-4">Adicionar Créditos</h3>
+                                    <p className="text-sm text-gray-600 mb-2">Usuário ID: {creditUserId}</p>
+                                    <div className="relative mb-6">
+                                        <span className="absolute left-3 top-2 text-gray-500 text-lg">R$</span>
+                                        <input
+                                            type="number"
+                                            value={creditAmount}
+                                            onChange={(e) => setCreditAmount(Number(e.target.value))}
+                                            className="w-full pl-10 p-2 border rounded-lg text-lg"
+                                            placeholder="0.00"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <div className="flex justify-end gap-2">
+                                        <button
+                                            onClick={() => setShowCreditModal(false)}
+                                            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                                        >
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            onClick={handleAddCredits}
+                                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition-colors shadow-sm"
+                                        >
+                                            Confirmar
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {editingUserId !== null && (
                             <div className="p-4 border rounded-lg bg-gray-50 space-y-4">
                                 <h4 className="font-semibold">Editar Usuário</h4>
@@ -741,6 +817,12 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
                 <ShieldIcon className="w-8 h-8 text-red-600 mr-3" />
                 <h2 className="text-4xl font-extrabold text-gray-900">Painel Administrativo</h2>
             </div>
+            {!isBackendOnline && (
+                <div className="mb-6 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-sm">
+                    <p className="font-bold">Backend Offline</p>
+                    <p>O servidor não está respondendo na porta 8000. Certifique-se de iniciar o Django: <code>python manage.py runserver</code></p>
+                </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                 <aside className="md:col-span-1">
                     <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-200 space-y-2">
@@ -749,7 +831,9 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
                         <TabButton tab="tracks" label="Trilhas" icon={<MusicIcon className="w-5 h-5" />} />
                         <TabButton tab="site" label="Site Builder" icon={<WandIcon className="w-5 h-5" />} />
                         <TabButton tab="business" label="Negócios" icon={<CreditCardIcon className="w-5 h-5" />} />
+
                         <TabButton tab="settings" label="Configurações IA" icon={<SettingsIcon className="w-5 h-5" />} />
+                        <TabButton tab="system" label="Sistema (Backend)" icon={<SlidersIcon className="w-5 h-5" />} />
                     </div>
                 </aside>
                 <div className="md:col-span-3 bg-white p-6 sm:p-8 rounded-2xl shadow-lg border border-gray-200">
