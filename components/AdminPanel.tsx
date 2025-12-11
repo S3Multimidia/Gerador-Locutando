@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Voice, User, TrackInfo } from '../types';
 import { ShieldIcon, UserIcon, MicIcon, MusicIcon, SettingsIcon, TrashIcon, EditIcon, WandIcon, CreditCardIcon, LayoutIcon, SlidersIcon, EyeIcon, EyeOffIcon } from './IconComponents';
 import { useSiteConfig } from '../contexts/SiteConfigContext';
