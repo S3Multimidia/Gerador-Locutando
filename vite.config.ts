@@ -21,6 +21,25 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       }
+    },
+    build: {
+      chunkSizeWarningLimit: 1000, // Aumenta limite de alerta para 1000kb
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            // Separa bibliotecas de node_modules em chunks 'vendor' para cache
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'vendor-react';
+              }
+              if (id.includes('lucide') || id.includes('framer-motion')) {
+                return 'vendor-ui';
+              }
+              return 'vendor'; // Outras libs
+            }
+          }
+        }
+      }
     }
   };
 });
