@@ -1,7 +1,9 @@
 import { Wallet, Transaction, DepositResponse } from '../types';
 
 // Base URL for the Django Backend
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Base URL for the Django Backend
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const API_URL = import.meta.env.VITE_API_URL || (isLocal ? 'http://localhost:8000' : '');
 
 const getAuthHeaders = () => {
     const token = localStorage.getItem('token');
