@@ -37,7 +37,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children, user, onLogout
 
                 <footer className="border-t border-slate-200 dark:border-slate-800 py-8 mt-auto transition-colors duration-300">
                     <div className="max-w-7xl mx-auto px-4 text-center text-slate-500 text-sm">
-                        <p>&copy; {new Date().getFullYear()} Locutando AI. Todos os direitos reservados. <span className="opacity-50 ml-2 text-xs">v{import.meta.env.PACKAGE_VERSION}</span></p>
+                        <p>&copy; {new Date().getFullYear()} Locutando AI. Todos os direitos reservados. <span className="opacity-50 ml-2 text-xs">v1.2</span></p>
                     </div>
                 </footer>
 
