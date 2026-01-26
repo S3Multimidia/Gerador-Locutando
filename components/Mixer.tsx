@@ -174,8 +174,8 @@ export const Mixer: React.FC<MixerProps> = ({
     const [undoStacks, setUndoStacks] = useState<Record<string, AudioBuffer[]>>({});
 
     // Global Mix Controls
-    const [globalFadeIn, setGlobalFadeIn] = useState<number>(0);
-    const [globalFadeOut, setGlobalFadeOut] = useState<number>(0);
+    const [globalFadeIn, setGlobalFadeIn] = useState<number>(1.0);
+    const [globalFadeOut, setGlobalFadeOut] = useState<number>(1.0);
 
     // Helper to get current buffer for a track (FINAL view)
     const getTrackBuffer = useCallback((trackName: string, originalBuffer: AudioBuffer | null) => {
@@ -399,6 +399,23 @@ export const Mixer: React.FC<MixerProps> = ({
 
             return { ...prev, [trackName]: newStack };
         });
+    };
+
+    const handleBoost = async (trackName: string) => {
+        let buffer = processedBuffers[trackName] || (trackName === 'voice' ? generatedAudio : (
+            trackName === 'opening' ? openingTrack?.buffer : (
+                trackName === 'closing' ? closingTrack?.buffer : backgroundTrack?.buffer
+            )
+        ));
+
+        if (!buffer) return;
+
+        pushUndo(trackName, buffer); // Save Undo
+
+        const { applyBoost } = await import('../utils/audioProcessing');
+        const newBuffer = applyBoost(buffer, 0.1); // +10%
+
+        setProcessedBuffers(prev => ({ ...prev, [trackName]: newBuffer }));
     };
 
     // Playback State
@@ -662,6 +679,8 @@ export const Mixer: React.FC<MixerProps> = ({
         closingTrack,
         processedVoiceBuffer // Fallback if not in finalBuffers yet
     ]);
+
+
 
     // Mixing Logic (Generate Mix Buffer)
     const generateMix = async () => {
@@ -1018,6 +1037,7 @@ export const Mixer: React.FC<MixerProps> = ({
                             canUndo={!!undoStacks['voice']?.length}
                             onDownload={handleDownloadVoice}
                             downloadLabel="Baixar Off"
+                            onBoost={() => handleBoost('voice')}
                         />
 
                         {/* Voice Effects Panel */}
