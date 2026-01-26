@@ -219,7 +219,10 @@ export const Waveform: React.FC<WaveformProps> = ({
         if (!isDragging.current || !buffer || !onSelectionChange) return;
 
         const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
+        let x = e.clientX - rect.left;
+
+        // Clamp x to be within the canvas
+        x = Math.max(0, Math.min(x, rect.width));
 
         // Consider it a drag if moved more than a few pixels
         if (Math.abs(x - dragStartX.current) > 3) {
@@ -227,7 +230,7 @@ export const Waveform: React.FC<WaveformProps> = ({
         }
 
         if (hasDragged.current) {
-            const startTime = xToTime(dragStartX.current, rect.width);
+            const startTime = xToTime(Math.max(0, Math.min(dragStartX.current, rect.width)), rect.width);
             const endTime = xToTime(x, rect.width);
             onSelectionChange(Math.min(startTime, endTime), Math.max(startTime, endTime));
         }

@@ -43,6 +43,7 @@ interface TrackChannelProps {
     onSilenceThresholdChange?: (value: number) => void;
     onDownload?: () => void;
     downloadLabel?: string;
+    onBoost?: () => void;
 }
 
 export const TrackChannel: React.FC<TrackChannelProps> = ({
@@ -80,7 +81,8 @@ export const TrackChannel: React.FC<TrackChannelProps> = ({
     silenceThreshold = 0.5,
     onSilenceThresholdChange,
     onDownload,
-    downloadLabel = 'Baixar'
+    downloadLabel = 'Baixar',
+    onBoost
 }) => {
     const duration = track?.buffer.duration || 0;
     const [selection, setSelection] = React.useState<{ start: number; end: number } | null>(null);
@@ -303,6 +305,15 @@ export const TrackChannel: React.FC<TrackChannelProps> = ({
                                     className={`flex-1 px-2 py-1.5 rounded text-xs font-bold transition-colors ${isSilenceRemovalActive ? 'bg-indigo-100 text-indigo-600 border border-indigo-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                                 >
                                     Remover Silêncio
+                                </button>
+                            )}
+                            {onBoost && (
+                                <button
+                                    onClick={onBoost}
+                                    className="px-2 py-1.5 rounded text-xs font-bold bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
+                                    title="Aumentar Volume em 10%"
+                                >
+                                    Boost +10%
                                 </button>
                             )}
                             {onUndo && (

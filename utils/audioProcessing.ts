@@ -262,3 +262,31 @@ export const applyEcho = (
 
     return newBuffer;
 };
+
+export const applyBoost = (
+    buffer: AudioBuffer,
+    amount: number = 0.1 // +10%
+): AudioBuffer => {
+    const newBuffer = new AudioBuffer({
+        length: buffer.length,
+        numberOfChannels: buffer.numberOfChannels,
+        sampleRate: buffer.sampleRate
+    });
+
+    const gain = 1 + amount;
+
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+        const inputData = buffer.getChannelData(ch);
+        const outputData = newBuffer.getChannelData(ch);
+
+        for (let i = 0; i < inputData.length; i++) {
+            // Simple gain with hard clipping protection
+            let val = inputData[i] * gain;
+            if (val > 1) val = 1;
+            if (val < -1) val = -1;
+            outputData[i] = val;
+        }
+    }
+
+    return newBuffer;
+};
