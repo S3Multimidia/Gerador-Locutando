@@ -137,8 +137,18 @@ export const useVoiceGenerator = (
 
         try {
             const ai = new GoogleGenAI({ apiKey });
+            console.log(`[TTS] Generating audio with model: ${ttsModel}, Voice: ${getVoiceName(voiceToUse.id)}`);
+            if (voiceToUse.prompt) {
+                console.log(`[TTS] Applying style prompt: ${voiceToUse.prompt}`);
+            }
+
             const response = await ai.models.generateContent({
                 model: ttsModel,
+                ...(voiceToUse.prompt && voiceToUse.prompt.trim() ? {
+                    systemInstruction: {
+                        parts: [{ text: `Aja como um locutor profissional. Sua instrução de estilo é: "${voiceToUse.prompt}". Leia apenas o texto fornecido, aplicando este estilo.` }]
+                    }
+                } : {}),
                 contents: [{ parts: [{ text: textToUse }] }],
                 config: {
                     responseModalities: [Modality.AUDIO],
