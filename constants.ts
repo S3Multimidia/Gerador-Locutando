@@ -10,7 +10,7 @@ export const INITIAL_VOICES: Voice[] = [
     gender: 'Masculino',
     language: 'pt-BR',
     description: 'Voz jovem, enérgica e comercial. Perfeito para varejo, promoções e vídeos que precisam de dinamismo e agilidade.',
-    prompt: 'Adote um tom extremamente enérgico, jovem e vendedor. Sua voz deve ter um ritmo ágil e dinâmico, com sorrisos audíveis para transmitir positividade e entusiasmo contagiante. Enfatize ofertas e benefícios com clareza e impacto. Ideal para comerciais de TV, rádio e internet que buscam conversão imediata. Evite soar monótono; a energia deve ser alta do início ao fim.',
+    prompt: 'Crie uma Voz Masculina, animada, quase gritando,  explosiva, A entonação deve transmitir entusiasmo e simpatia, mantendo uma dicção excelente e expressiva. A velocidade é rápida, transmitindo urgência de promoção, mas com pausas naturais para destacar as principais informações. O timbre é levemente agudo, mas encorpado, garantindo credibilidade e carisma. A voz deve soar como de um locutor profissional de rádio ou TV, usada em campanhas publicitárias, apresentando dinamismo e confiança.',
     imageUrl: '/images/voices/daniel_voice_actor.png',
     demoUrl: '/trilha_principal.mp3'
   },

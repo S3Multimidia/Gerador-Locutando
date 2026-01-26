@@ -32,8 +32,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                     <div className="space-y-6">
                         <div className="flex justify-center w-full">
                             <GoogleLogin
-                                onSuccess={credentialResponse => {
-                                    const result = auth.loginWithGoogleToken(credentialResponse);
+                                onSuccess={async credentialResponse => {
+                                    const result = await auth.loginWithGoogleToken(credentialResponse);
                                     if (result.success) {
                                         onLoginSuccess(auth.userRole || 'user');
                                     }
@@ -63,11 +63,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                     <div className="mt-6 p-4 bg-slate-700/50 rounded-xl border border-slate-600/50">
                         <p className="text-xs text-slate-400 mb-2 text-center uppercase tracking-wider">Acesso Temporário (Dev)</p>
                         <form
-                            onSubmit={(e) => {
+                            onSubmit={async (e) => {
                                 e.preventDefault();
                                 const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
                                 if (email) {
-                                    const result = auth.login(email, '');
+                                    const result = await auth.login(email, '');
                                     if (result.success) {
                                         onLoginSuccess(auth.userRole || 'user');
                                     } else {

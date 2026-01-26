@@ -28,3 +28,20 @@ dist-ssr
 .env.development
 .env.local
 .env.*.local
+
+# Binary and Audio Files
+*.mp3
+*.wav
+*.pk
+*.exe
+download.pk
+
+# Backend Generated/Temp
+backend/generated_audio/
+temp_uploads/
+backend/db.sqlite3
+backend/__pycache__/
+*.pyc
+
+# Scripts temporários
+test_download.py

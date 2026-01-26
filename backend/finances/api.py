@@ -14,8 +14,33 @@ from .models import Deposit
 from .services import WalletService
 from core.services import NotificationService
 from .admin_api import AdminAddCreditView
+from .models import WalletTransaction
 import hmac
 import hashlib
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_wallet_balance(request):
+    balance = WalletService.get_balance(request.user)
+    return Response({'balance': float(balance), 'currency': 'BRL'})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_transactions(request):
+    try:
+        transactions = WalletTransaction.objects.filter(wallet__user=request.user).order_by('-created_at')[:20]
+        data = [{
+            'id': t.id,
+            'type': t.transaction_type,
+            'amount': float(t.amount),
+            'description': t.description,
+            'created_at': t.created_at
+        } for t in transactions]
+        return Response(data)
+    except Exception as e:
+        return Response([], status=200)
 
 class DepositViewSet(viewsets.GenericViewSet):
     permission_classes = [permissions.IsAuthenticated]

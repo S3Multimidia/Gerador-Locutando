@@ -36,8 +36,18 @@ const App: React.FC = () => {
   const [backgroundTracks, setBackgroundTracks] = useState<TrackInfo[]>(INITIAL_BACKGROUND_TRACKS);
   const [isLoadingStorage, setIsLoadingStorage] = useState(true);
 
-  const [ttsModel, setTtsModel] = useState<string>(() => safeStorageGet('locutando_ttsModel', 'gemini-2.5-flash-preview-tts'));
+  // Force default to Flash model as per user's corrected screenshot preference
+  const [ttsModel, setTtsModel] = useState<string>('gemini-2.5-flash-preview-tts');
   const [chatModel, setChatModel] = useState<string>(() => safeStorageGet('locutando_chatModel', 'gemini-2.5-pro'));
+
+  // Persist Model Settings
+  useEffect(() => {
+    localStorage.setItem('locutando_ttsModel', ttsModel);
+  }, [ttsModel]);
+
+  useEffect(() => {
+    localStorage.setItem('locutando_chatModel', chatModel);
+  }, [chatModel]);
 
   // Load from IndexedDB on mount
   useEffect(() => {

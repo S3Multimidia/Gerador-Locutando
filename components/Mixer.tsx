@@ -872,6 +872,28 @@ export const Mixer: React.FC<MixerProps> = ({
         URL.revokeObjectURL(url);
     };
 
+    const handleDownloadVoice = async () => {
+        // Prefer edited buffer (if cut) or original generated
+        const bufferToDownload = processedBuffers['voice'] || generatedAudio;
+
+        if (!bufferToDownload) return;
+
+        try {
+            const mp3Blob = await audioBufferToMp3(bufferToDownload);
+            const url = URL.createObjectURL(mp3Blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'locucao_off_original.mp3';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            console.error("Error downloading voice:", e);
+            setError("Erro ao baixar áudio off.");
+        }
+    };
+
     useEffect(() => {
         setMixedPreviewBuffer(null);
         if (mixIsPlaying) stopMixPlayback();
@@ -972,6 +994,8 @@ export const Mixer: React.FC<MixerProps> = ({
                             onSeek={handleVoiceSeek}
                             onUndo={() => handleUndo('voice')}
                             canUndo={!!undoStacks['voice']?.length}
+                            onDownload={handleDownloadVoice}
+                            downloadLabel="Baixar Off"
                         />
 
                         {/* Voice Effects Panel */}

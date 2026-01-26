@@ -41,6 +41,8 @@ interface TrackChannelProps {
     uploadLabel?: string;
     silenceThreshold?: number;
     onSilenceThresholdChange?: (value: number) => void;
+    onDownload?: () => void;
+    downloadLabel?: string;
 }
 
 export const TrackChannel: React.FC<TrackChannelProps> = ({
@@ -76,7 +78,9 @@ export const TrackChannel: React.FC<TrackChannelProps> = ({
     onUpload,
     uploadLabel = 'Carregar Arquivo',
     silenceThreshold = 0.5,
-    onSilenceThresholdChange
+    onSilenceThresholdChange,
+    onDownload,
+    downloadLabel = 'Baixar'
 }) => {
     const duration = track?.buffer.duration || 0;
     const [selection, setSelection] = React.useState<{ start: number; end: number } | null>(null);
@@ -310,6 +314,18 @@ export const TrackChannel: React.FC<TrackChannelProps> = ({
                                 >
                                     <UndoIcon className="w-3 h-3" />
                                     Desfazer
+                                </button>
+                            )}
+                            {onDownload && (
+                                <button
+                                    onClick={onDownload}
+                                    className="flex items-center justify-center gap-1 px-2 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded text-xs font-bold transition-colors"
+                                    title={downloadLabel}
+                                >
+                                    <div className="w-3 h-3">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    </div>
+                                    {downloadLabel}
                                 </button>
                             )}
                         </div>

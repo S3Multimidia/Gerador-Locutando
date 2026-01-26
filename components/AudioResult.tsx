@@ -13,6 +13,7 @@ interface AudioResultProps {
   setCutEndSec: (v: number) => void;
   variant?: 'default' | 'mix';
   showCut?: boolean;
+  originalBlob?: Blob | null;
 }
 
 // LameJS is loaded from a script tag in index.html
@@ -69,7 +70,7 @@ async function audioBufferToMp3(buffer: AudioBuffer, startSec: number = 0, endSe
 }
 
 
-export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioContext, setGeneratedAudio, cutStartSec, cutEndSec, setCutStartSec, setCutEndSec, variant = 'default', showCut = true }) => {
+export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioContext, setGeneratedAudio, cutStartSec, cutEndSec, setCutStartSec, setCutEndSec, variant = 'default', showCut = true, originalBlob = null }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string>('');
@@ -113,9 +114,23 @@ export const AudioResult: React.FC<AudioResultProps> = ({ audioBuffer, audioCont
       setUploadStatus('idle'); // Reset upload status on new generation
 
       try {
-        const s = showCut ? startSec : 0;
-        const e = showCut ? (endSec || audioBuffer.duration) : audioBuffer.duration;
-        const mp3Blob = await audioBufferToMp3(audioBuffer, s, e);
+        let mp3Blob: Blob;
+
+        if (originalBlob && !showCut) {
+          // Use original blob directly if no cuts needed (Storefront mode usually doesn't need cuts)
+          // Actually, for Mix/PortaLoja, we usually want the exact file from server.
+          mp3Blob = originalBlob;
+        } else {
+          const s = showCut ? startSec : 0;
+          const e = showCut ? (endSec || audioBuffer.duration) : audioBuffer.duration;
+          // Only re-encode if we really need to cut/change it
+          if (originalBlob && s === 0 && Math.abs(e - audioBuffer.duration) < 0.1) {
+            mp3Blob = originalBlob;
+          } else {
+            mp3Blob = await audioBufferToMp3(audioBuffer, s, e);
+          }
+        }
+
         mp3BlobRef.current = mp3Blob; // Store the blob
         if (isMounted) {
           objectUrl = URL.createObjectURL(mp3Blob);

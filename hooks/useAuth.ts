@@ -24,43 +24,47 @@ export const useAuth = () => {
     return INITIAL_USERS;
   });
 
-  const loginWithGoogleToken = (credentialResponse: any): { success: boolean; message?: string } => {
+
+
+  // Helper to sync with backend
+  const syncWithBackend = async (email: string, name?: string): Promise<{ success: boolean; token?: string; message?: string }> => {
     try {
-      // If using the Google Button component, the response has a 'credential' field (JWT)
-      // If using useGoogleLogin (implicit flow), it returns an access_token.
-      // However, for simple identity, the JWT (ID Token) is preferred.
-      // Let's assume we are receiving the ID Token (credential) or we might need to fetch user info if it's an access token.
+      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${API_URL}/api/auth/login/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name })
+      });
 
-      // NOTE: @react-oauth/google's GoogleLogin component returns { credential: string, clientId: string }
-      // useGoogleLogin returns { access_token: string, ... } usually.
+      if (!res.ok) throw new Error('Falha na autenticação com servidor');
 
-      // If we receive an object with 'credential', it's the ID Token.
-      if (credentialResponse.credential) {
-        const decoded: any = jwtDecode(credentialResponse.credential);
-        const { email, name, picture } = decoded;
-        return processLogin(email, name, picture);
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem('token', data.token); // Store real token
+        return { success: true, token: data.token };
       }
-
-      // If we receive an access_token (from useGoogleLogin), we would need to fetch the user profile.
-      // But for simplicity and to match the "Google Login" requirement, we will try to use the ID Token flow if possible,
-      // or if the user passes the profile data directly.
-
-      return { success: false, message: 'Formato de credencial não suportado.' };
-    } catch (error) {
-      console.error("Login failed", error);
-      return { success: false, message: 'Falha ao processar login do Google.' };
+      return { success: false, message: 'Token não recebido' };
+    } catch (e) {
+      console.error("Backend auth failed", e);
+      return { success: false, message: 'Erro ao conectar com servidor' };
     }
   };
 
-  const processLogin = (email: string, name?: string, picture?: string): { success: boolean; message?: string } => {
+  const processLogin = async (email: string, name?: string, picture?: string): Promise<{ success: boolean; message?: string }> => {
     const cleanEmail = email.trim().toLowerCase();
 
+    // 1. Backend Login (Get Token)
+    const backendResult = await syncWithBackend(cleanEmail, name);
+    if (!backendResult.success) {
+      return { success: false, message: backendResult.message };
+    }
+
+    // 2. Client Side State (Legacy)
     // Check if user exists
     let user = users.find(u => u.email.toLowerCase() === cleanEmail);
 
-    // If not, create a new user
+    // If not, create a new user locally
     if (!user) {
-      // If it's the specific admin email, ensure they get admin role
       if (cleanEmail === 's3multimidia@gmail.com') {
         user = {
           id: Date.now(),
@@ -84,17 +88,14 @@ export const useAuth = () => {
       }
       setUsers(prev => [...prev, user!]);
     } else {
-      // Update existing user info if needed (e.g. picture)
       if (picture && user.imageUrl !== picture) {
         user.imageUrl = picture;
         setUsers(prev => prev.map(u => u.id === user!.id ? { ...u, imageUrl: picture } : u));
       }
     }
 
-    // Enforce Admin Role for specific email
     if (cleanEmail === 's3multimidia@gmail.com' && user.role !== 'admin') {
       user.role = 'admin';
-      // Update in state as well
       setUsers(prev => prev.map(u => u.id === user!.id ? { ...u, role: 'admin' } : u));
     }
 
@@ -104,13 +105,26 @@ export const useAuth = () => {
     return { success: true };
   }
 
-  const loginWithGoogle = (email: string): { success: boolean; message?: string } => {
-    return processLogin(email);
+  const loginWithGoogleToken = async (credentialResponse: any): Promise<{ success: boolean; message?: string }> => {
+    try {
+      if (credentialResponse.credential) {
+        const decoded: any = jwtDecode(credentialResponse.credential);
+        const { email, name, picture } = decoded;
+        return await processLogin(email, name, picture);
+      }
+      return { success: false, message: 'Formato de credencial não suportado.' };
+    } catch (error) {
+      console.error("Login failed", error);
+      return { success: false, message: 'Falha ao processar login do Google.' };
+    }
   };
 
-  // Deprecated: kept for compatibility if needed, but redirects to google login logic
-  const login = (email: string, password: string) => {
-    return loginWithGoogle(email);
+  const loginWithGoogle = async (email: string): Promise<{ success: boolean; message?: string }> => {
+    return await processLogin(email);
+  };
+
+  const login = async (email: string, password: string) => {
+    return await processLogin(email);
   };
 
   const logout = () => {

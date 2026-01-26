@@ -34,14 +34,11 @@ export const VoiceSelectorCarousel = memo<VoiceSelectorCarouselProps>(({
     }, []);
 
     useEffect(() => {
-        if (!selectedVoice && availableVoices.length > 0) {
-            setSelectedVoice(availableVoices[0]);
-            setVoiceCarouselIndex(0);
-        } else if (selectedVoice) {
+        if (selectedVoice) {
             const idx = availableVoices.findIndex(v => v.id === selectedVoice.id);
             if (idx >= 0) setVoiceCarouselIndex(idx);
         }
-    }, [selectedVoice, availableVoices, setSelectedVoice]);
+    }, [selectedVoice, availableVoices]);
 
     const handlePreview = (voice: Voice) => {
         const audio = audioRef.current;

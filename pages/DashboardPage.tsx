@@ -11,6 +11,8 @@ import { DynamicLoadingMessage } from '../components/DynamicLoadingMessage';
 import { useDashboardPersistence } from '../hooks/useDashboardPersistence';
 import { BackendService } from '../services/backend';
 import { DepositModal } from '../components/Wallet/DepositModal';
+import { StorefrontGenerator } from '../components/StorefrontGenerator';
+import { OrderList } from '../components/OrderList';
 
 interface DashboardPageProps {
     availableVoices: Voice[];
@@ -23,8 +25,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
     const [text, setText] = useState<string>('');
     const [isExpertGenerated, setIsExpertGenerated] = useState<boolean>(false);
     const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
+    const [finalMixedBlob, setFinalMixedBlob] = useState<Blob | null>(null);
 
-    const [activeTab, setActiveTab] = useState<'generate' | 'record'>('generate');
+    const [activeTab, setActiveTab] = useState<'generate' | 'record' | 'storefront' | 'orders'>('generate');
     const [showDepositModal, setShowDepositModal] = useState(false);
     const [walletBalance, setWalletBalance] = useState<number>(0);
 
@@ -40,7 +43,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
 
     const { dashboardState, updateDashboardState, isPersistenceLoaded } = useDashboardPersistence();
 
-    // Initialize state from persistence once loaded
+    // Initialize scalar state from persistence once loaded
     useEffect(() => {
         if (isPersistenceLoaded) {
             if (dashboardState.text) setText(dashboardState.text);
@@ -49,15 +52,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
             if (dashboardState.cutEndSec) setCutEndSec(dashboardState.cutEndSec);
             if (dashboardState.finalCutStartSec) setFinalCutStartSec(dashboardState.finalCutStartSec);
             if (dashboardState.finalCutEndSec) setFinalCutEndSec(dashboardState.finalCutEndSec);
+        }
+    }, [isPersistenceLoaded]);
 
-            if (dashboardState.selectedVoiceId && availableVoices.length > 0) {
-                const persistedVoice = availableVoices.find(v => v.id === dashboardState.selectedVoiceId);
-                if (persistedVoice) {
-                    setSelectedVoice(persistedVoice);
-                }
+    // Initialize/Restore selected voice from persistence
+    useEffect(() => {
+        if (isPersistenceLoaded && availableVoices.length > 0 && !selectedVoice && dashboardState.selectedVoiceId) {
+            const persistedVoice = availableVoices.find(v => v.id === dashboardState.selectedVoiceId);
+            if (persistedVoice) {
+                setSelectedVoice(persistedVoice);
             }
         }
-    }, [isPersistenceLoaded, availableVoices, dashboardState.text, dashboardState.activeTab, dashboardState.cutStartSec, dashboardState.cutEndSec, dashboardState.finalCutStartSec, dashboardState.finalCutEndSec, dashboardState.selectedVoiceId]);
+    }, [isPersistenceLoaded, availableVoices, selectedVoice, dashboardState.selectedVoiceId]);
 
     // Update persistence when local state changes
     useEffect(() => {
@@ -105,22 +111,28 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
     // Sync selected voice availability and data
     useEffect(() => {
         if (availableVoices.length === 0) {
-            setSelectedVoice(null);
+            if (selectedVoice !== null) setSelectedVoice(null);
             return;
         }
         if (selectedVoice) {
             const updatedVoice = availableVoices.find(v => v.id === selectedVoice.id);
             if (updatedVoice) {
                 // Update if the object reference changed (meaning data might have changed)
+                // Use JSON stringify to avoid infinite loops if refs are different but data is same
                 if (updatedVoice !== selectedVoice) {
-                    setSelectedVoice(updatedVoice);
+                    if (JSON.stringify(updatedVoice) !== JSON.stringify(selectedVoice)) {
+                        setSelectedVoice(updatedVoice);
+                    }
                 }
             } else {
                 // Voice no longer exists
                 setSelectedVoice(null);
             }
+        } else if (isPersistenceLoaded) {
+            // If persistence is loaded but no voice selected (e.g. first visit), select the first one
+            setSelectedVoice(availableVoices[0]);
         }
-    }, [availableVoices, selectedVoice]);
+    }, [availableVoices, selectedVoice, isPersistenceLoaded]);
 
     // Update cut times when audio changes
     useEffect(() => {
@@ -142,6 +154,46 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
         setFinalMixedAudio(null);
         if (!audioBuffer) setError(null);
     }, [setGeneratedAudio, setFinalMixedAudio, setError]);
+
+    const handleStorefrontGenerate = async (formData: FormData) => {
+        if (!audioContext) return;
+        try {
+            setError(null);
+            // Re-use turbo loading state for UI consistency
+            // We need to access setTurboLoading exposed or add a new state?
+            // useVoiceGenerator exposes isTurboLoading but not setIsTurboLoading directly unless we added it?
+            // Actually useVoiceGenerator doesn't expose setters for loading. 
+            // I'll create a local loading state for storefront.
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const [isStorefrontLoading, setIsStorefrontLoading] = useState(false);
+
+    const onStorefrontGenerate = async (formData: FormData) => {
+        if (!audioContext) return;
+        try {
+            setIsStorefrontLoading(true);
+            setError(null);
+            const response = await BackendService.generateStorefrontAudio(formData);
+
+            // Async handling
+            if (response.success) {
+                // Success! Redirect to orders
+                setActiveTab('orders');
+                // Optional: Add toast here if you have a toast system
+            } else {
+                throw new Error(response.error || 'Erro desconhecido');
+            }
+
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || 'Erro ao gerar áudio porta de loja.');
+        } finally {
+            setIsStorefrontLoading(false);
+        }
+    };
 
     return (
         <main className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8">
@@ -170,18 +222,30 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                     <DepositModal isOpen={showDepositModal} onClose={() => setShowDepositModal(false)} />
 
                     {/* Tab Navigation */}
-                    <div className="mb-6 bg-slate-900/50 p-1 rounded-lg inline-flex w-full">
+                    <div className="mb-6 bg-slate-900/50 p-1 rounded-lg flex flex-wrap gap-1 w-full">
                         <button
                             onClick={() => setActiveTab('generate')}
-                            className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'generate' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            className={`flex-1 min-w-[100px] px-3 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'generate' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                         >
                             IA Generator
                         </button>
                         <button
                             onClick={() => setActiveTab('record')}
-                            className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'record' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            className={`flex-1 min-w-[100px] px-3 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'record' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                         >
-                            Gravar Áudio
+                            Gravar
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('storefront')}
+                            className={`flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'storefront' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            Porta de Loja
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('orders')}
+                            className={`flex-1 min-w-[120px] px-3 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'orders' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            Meus Pedidos
                         </button>
                     </div>
 
@@ -210,6 +274,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                                 onRecordingComplete={handleRecordingComplete}
                             />
                         )}
+                        {activeTab === 'storefront' && (
+                            <StorefrontGenerator
+                                onGenerate={onStorefrontGenerate}
+                                isLoading={isStorefrontLoading}
+                            />
+                        )}
+                        {activeTab === 'orders' && (
+                            <OrderList />
+                        )}
                     </div>
                     {error && (
                         <div className="mt-6 p-4 bg-red-900/30 text-red-200 border-l-4 border-red-500 rounded-r-lg" role="alert">
@@ -221,7 +294,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
 
                 {/* Right Panel: Mixer (7 cols) */}
                 <div className="xl:col-span-7 space-y-8">
-                    {isTurboLoading ? (
+                    {/* Show generic loading for storefront OR turbo */}
+                    {(isTurboLoading || isStorefrontLoading) ? (
                         <div className="bg-slate-800 p-12 rounded-2xl shadow-xl border border-slate-700 animate-fade-in text-center flex flex-col items-center justify-center min-h-[400px]">
                             <LoadingSpinner className="w-16 h-16 text-indigo-500 mb-6" />
                             <h3 className="text-2xl font-bold text-white mb-2">Processando Áudio...</h3>
@@ -248,10 +322,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                                 setCutStartSec={setFinalCutStartSec}
                                 setCutEndSec={setFinalCutEndSec}
                                 variant="mix"
+                                originalBlob={finalMixedBlob}
                             />
                             <div className="mt-6 flex justify-end">
                                 <button
-                                    onClick={() => setFinalMixedAudio(null)}
+                                    onClick={() => { setFinalMixedAudio(null); setFinalMixedBlob(null); }}
                                     className="text-sm text-slate-500 hover:text-white underline"
                                 >
                                     Voltar / Gerar Novo

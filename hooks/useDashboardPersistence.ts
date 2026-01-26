@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 // Keys for localStorage
 const STORAGE_KEY_PREFIX = 'locutando_dashboard_';
@@ -67,9 +67,9 @@ export const useDashboardPersistence = () => {
         };
     }, [state, isLoaded]);
 
-    const updateState = (updates: Partial<DashboardState>) => {
+    const updateState = useCallback((updates: Partial<DashboardState>) => {
         setState(prev => ({ ...prev, ...updates }));
-    };
+    }, []);
 
     return {
         dashboardState: state,
