@@ -1,47 +1,68 @@
 from django.db import models
 from django.core.cache import cache
 
-class SystemConfig(models.Model):
+class BackgroundTrack(models.Model):
     """
-    Singleton model for dynamic system configuration.
-    Stores API keys and Instance URLs avoiding hardcode and enabling rapid rotation.
+    Global background tracks available to all users.
     """
-    evolution_api_url = models.URLField(
-        verbose_name="Evolution API Instance URL",
-        help_text="Ex: https://api.evolution.com/instance/your-instance"
-    )
-    evolution_api_token = models.CharField(
-        max_length=255,
-        verbose_name="Evolution API Token",
-        help_text="API Key for authentication"
-    )
+    name = models.CharField(max_length=255)
+    file = models.FileField(upload_to='tracks/') # We will need to configure media serving
+    category = models.CharField(max_length=100, default='Geral')
+    is_active = models.BooleanField(default=True)
+    order = models.IntegerField(default=0)
     
-    # Singleton enforcement
+    # Store standard duration to avoid decoding on list
+    duration = models.FloatField(null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
+class GlobalConfig(models.Model):
+    """
+    Centralized configuration for the entire platform.
+    Replaces/Extends SystemConfig.
+    Singleton pattern.
+    """
+    # --- IA Configuration ---
+    gemini_api_key = models.CharField(max_length=255, blank=True, help_text="Chave Global (Opcional - usuários podem ter a própria)")
+    google_client_id = models.CharField(max_length=255, blank=True)
+    
+    tts_model = models.CharField(max_length=100, default='gemini-2.5-flash-preview-tts')
+    chat_model = models.CharField(max_length=100, default='gemini-2.5-flash')
+    
+    specialist_prompt = models.TextField(
+        default="Você é um Especialista em Copywriting...",
+        help_text="Prompt do sistema para o especialista em roteiros"
+    )
+
+    # --- Site Builder / visual ---
+    site_title = models.CharField(max_length=255, default='Locutando AI')
+    hero_headline = models.CharField(max_length=255, default='Crie Locuções de Varejo em Segundos')
+    hero_subheadline = models.TextField(default='Inteligência Artificial avançada para gerar vozes ultra-realistas.')
+    
+    primary_color = models.CharField(max_length=20, default='#4F46E5')
+
+    # --- Evolution API (Legacy/Notification) ---
+    evolution_api_url = models.URLField(blank=True, verbose_name="Evolution API URL")
+    evolution_api_token = models.CharField(max_length=255, blank=True)
+    
+    # Singleton logic
     def save(self, *args, **kwargs):
         self.pk = 1
-        super(SystemConfig, self).save(*args, **kwargs)
-        # Invalidate cache on save
-        cache.delete('system_config')
+        super(GlobalConfig, self).save(*args, **kwargs)
+        cache.delete('global_config')
 
     @classmethod
     def get_solo(cls):
-        """
-        Returns the singleton instance, cached for performance.
-        """
-        config_cache = cache.get('system_config')
-        if config_cache:
-            return config_cache
-        
-        obj, created = cls.objects.get_or_create(pk=1)
-        cache.set('system_config', obj, timeout=3600) # Cache for 1 hour
+        cached = cache.get('global_config')
+        if cached: return cached
+        obj, _ = cls.objects.get_or_create(pk=1)
+        cache.set('global_config', obj, 3600)
         return obj
 
-    def __str__(self):
-        return "System Configuration (Singleton)"
-
     class Meta:
-        verbose_name = "System Configuration"
-        verbose_name_plural = "System Configuration"
+        verbose_name = "Configuração Global (IA & Site)"
+        verbose_name_plural = "Configuração Global (IA & Site)"
 
 class AudioRequest(models.Model):
     STATUS_CHOICES = [
@@ -63,3 +84,26 @@ class AudioRequest(models.Model):
 
     def __str__(self):
         return f"Request {self.id} - {self.user.username} ({self.status})"
+
+class VoiceConfig(models.Model):
+    """
+    Stores configuration for voices available in the system.
+    Shared across all users.
+    """
+    voice_id = models.CharField(max_length=100, unique=True, help_text="ID Técnico (ex: iapetus)")
+    name = models.CharField(max_length=100, help_text="Nome Interno")
+    display_name = models.CharField(max_length=100, help_text="Nome de Exibição")
+    gender = models.CharField(max_length=20, choices=[('Masculino', 'Masculino'), ('Feminino', 'Feminino')])
+    language = models.CharField(max_length=10, default='pt-BR')
+    description = models.TextField(blank=True)
+    prompt = models.TextField(blank=True, help_text="Prompt de sistema para estilo")
+    image_url = models.CharField(max_length=500, blank=True)
+    demo_url = models.CharField(max_length=500, blank=True)
+    is_active = models.BooleanField(default=True)
+    order = models.IntegerField(default=0, help_text="Ordem de exibição")
+
+    def __str__(self):
+        return f"{self.display_name} ({self.voice_id})"
+
+    class Meta:
+        ordering = ['order', 'display_name']

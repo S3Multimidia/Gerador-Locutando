@@ -31,58 +31,92 @@ export const initDB = (): Promise<IDBDatabase> => {
     });
 };
 
+import { BackendService } from '../services/backend';
+
 export const saveVoices = async (voices: Voice[]): Promise<void> => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_VOICES], 'readwrite');
-        const store = transaction.objectStore(STORE_VOICES);
+    // Save to Backend (Source of Truth)
+    try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${BackendService.API_URL}/api/storefront/voices/sync/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Token ${token}` } : {})
+            },
+            body: JSON.stringify(voices)
+        });
 
-        // Clear existing to avoid duplicates if IDs changed or items removed
-        // A simpler approach for this use case is to clear and rewrite, 
-        // or we can put each item. Since we are saving the whole state, 
-        // clearing first ensures deleted items are removed.
-        const clearRequest = store.clear();
+        if (!res.ok) {
+            const err = await res.text();
+            throw new Error(`Failed to save to backend: ${err}`);
+        }
 
-        clearRequest.onsuccess = () => {
-            let completed = 0;
-            if (voices.length === 0) {
-                resolve();
-                return;
-            }
+        // Also update IndexedDB for offline capability/cache
+        const db = await initDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_VOICES], 'readwrite');
+            const store = transaction.objectStore(STORE_VOICES);
+            store.clear().onsuccess = () => {
+                let completed = 0;
+                if (voices.length === 0) return resolve();
+                voices.forEach(voice => {
+                    store.put(voice).onsuccess = () => {
+                        completed++;
+                        if (completed === voices.length) resolve();
+                    };
+                });
+            };
+        });
 
-            voices.forEach(voice => {
-                const request = store.put(voice);
-                request.onsuccess = () => {
-                    completed++;
-                    if (completed === voices.length) resolve();
-                };
-                request.onerror = () => reject('Erro ao salvar voz.');
-            });
-        };
-
-        clearRequest.onerror = () => reject('Erro ao limpar vozes antigas.');
-    });
+    } catch (e) {
+        console.error('Error saving voices:', e);
+        throw e;
+    }
 };
 
 export const getVoices = async (): Promise<Voice[]> => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_VOICES], 'readonly');
-        const store = transaction.objectStore(STORE_VOICES);
-        const request = store.getAll();
-
-        request.onsuccess = () => {
-            const result = request.result as Voice[];
-            if (result && result.length > 0) {
-                resolve(result);
-            } else {
-                // If empty, return initial voices
-                resolve(INITIAL_VOICES);
+    // 1. Try Backend First
+    try {
+        const res = await fetch(`${BackendService.API_URL}/api/storefront/voices/`);
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                // Update local cache
+                saveVoicesToCache(data);
+                return data;
             }
-        };
+        }
+    } catch (e) {
+        console.warn('Backend unavailable or empty, trying cache/defaults...', e);
+    }
 
-        request.onerror = () => reject('Erro ao carregar vozes.');
-    });
+    // 2. Fallback to IndexedDB
+    try {
+        const db = await initDB();
+        const cachedVoices = await new Promise<Voice[]>((resolve, reject) => {
+            const transaction = db.transaction([STORE_VOICES], 'readonly');
+            const store = transaction.objectStore(STORE_VOICES);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result as Voice[]);
+            request.onerror = () => reject('IDB Error');
+        });
+
+        if (cachedVoices && cachedVoices.length > 0) return cachedVoices;
+    } catch (e) { /* ignore */ }
+
+    // 3. Fallback to Constants
+    return INITIAL_VOICES;
+};
+
+// Helper for caching without triggering recursive backend save
+const saveVoicesToCache = async (voices: Voice[]) => {
+    try {
+        const db = await initDB();
+        const transaction = db.transaction([STORE_VOICES], 'readwrite');
+        const store = transaction.objectStore(STORE_VOICES);
+        store.clear();
+        voices.forEach(v => store.put(v));
+    } catch (e) { console.error('Cache error', e); }
 };
 
 export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
@@ -115,21 +149,46 @@ export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
 };
 
 export const getTracks = async (): Promise<TrackInfo[]> => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_TRACKS], 'readonly');
-        const store = transaction.objectStore(STORE_TRACKS);
-        const request = store.getAll();
-
-        request.onsuccess = () => {
-            const result = request.result as TrackInfo[];
-            if (result && result.length > 0) {
-                resolve(result);
-            } else {
-                resolve(INITIAL_BACKGROUND_TRACKS);
+    // 1. Try Backend First
+    try {
+        const res = await fetch(`${BackendService.API_URL}/api/storefront/tracks/`);
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                // Save to cache optional, but good for offline.
+                // Ideally we cache the URLs or depend on browser cache.
+                saveTracksToCache(data);
+                return data;
             }
-        };
+        }
+    } catch (e) {
+        console.warn('Backend unavailable (tracks), trying cache...', e);
+    }
 
-        request.onerror = () => reject('Erro ao carregar trilhas.');
-    });
+    // 2. Fallback to IndexedDB
+    try {
+        const db = await initDB();
+        const cachedTracks = await new Promise<TrackInfo[]>((resolve, reject) => {
+            const transaction = db.transaction([STORE_TRACKS], 'readonly');
+            const store = transaction.objectStore(STORE_TRACKS);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result as TrackInfo[]);
+            request.onerror = () => reject('IDB Error');
+        });
+
+        if (cachedTracks && cachedTracks.length > 0) return cachedTracks;
+    } catch (e) { /* ignore */ }
+
+    // 3. Fallback
+    return INITIAL_BACKGROUND_TRACKS;
+};
+
+const saveTracksToCache = async (tracks: TrackInfo[]) => {
+    try {
+        const db = await initDB();
+        const transaction = db.transaction([STORE_TRACKS], 'readwrite');
+        const store = transaction.objectStore(STORE_TRACKS);
+        store.clear();
+        tracks.forEach(track => store.put(track));
+    } catch (e) { console.error('Cache error', e); }
 };

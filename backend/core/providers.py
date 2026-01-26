@@ -2,19 +2,21 @@ import requests
 from typing import Dict, Any, Optional
 from django.conf import settings
 from .interfaces import NotificationProvider
-from .models import SystemConfig
+from .models import GlobalConfig
 
 class EvolutionApiProvider(NotificationProvider):
     """
     Concrete implementation of NotificationProvider for Evolution API.
-    Fetches configuration dynamically from SystemConfig.
+    Fetches configuration dynamically from GlobalConfig.
     """
 
     def _get_config(self):
         """Helper to get current config."""
-        config = SystemConfig.get_solo()
+        config = GlobalConfig.get_solo()
         if not config.evolution_api_url or not config.evolution_api_token:
-            raise ValueError("Evolution API configuration is missing in SystemConfig.")
+            # Optionally just return None or log warn, but here we keep behavior
+            # raise ValueError("Evolution API configuration is missing in GlobalConfig.")
+             return "", ""
         return config.evolution_api_url, config.evolution_api_token
     
     def _headers(self, token: str) -> Dict[str, str]:

@@ -257,7 +257,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
     }
   };
 
-  const handleValidationOption = async (option: 'A' | 'B' | 'C') => {
+  const handleValidationOption = async (option: 'A' | 'B' | 'C' | 'D') => {
     if (option === 'A') {
       setValidationStatus('validated');
       setIsExpertGenerated(true);
@@ -266,6 +266,27 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
 
     if (option === 'C') {
       generateSpecialistScript();
+      return;
+    }
+
+    if (option === 'D') {
+      // Retail Style Formatting (Client-side optimization)
+      let formatted = text.toUpperCase();
+
+      // 1. Intensify Punctuation
+      formatted = formatted.replace(/\./g, '!!!').replace(/,/g, '... ');
+
+      // 2. Highlight Prices (Simple Regex for R$ XX,XX or similar)
+      formatted = formatted.replace(/(R\$\s?[\d,.]+)/g, '💥 APENAS $1!!!');
+
+      // 3. Ensure Urgency (Prepend/Append if missing)
+      if (!formatted.includes('CORRA') && !formatted.includes('APROVEITE')) {
+        formatted = `🚨 ATENÇÃO!!! ${formatted} CORRA E APROVEITE!!! 🚨`;
+      }
+
+      setText(formatted);
+      setValidationStatus('validated');
+      setIsExpertGenerated(true);
       return;
     }
 
@@ -403,35 +424,41 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
             Antes de prosseguir, escolha como deseja tratar o seu texto:
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <button
               onClick={() => handleValidationOption('A')}
               disabled={isValidating}
-              className="p-4 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-left transition-all hover:scale-[1.02]"
+              className="p-4 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-left transition-all group"
             >
-              <div className="font-bold text-white mb-1">Não Corrigir</div>
-              <p className="text-xs text-slate-400 mb-2">Mantém o texto exato (raw).</p>
-              <span className="text-[10px] text-amber-500 bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20 block text-center">
-                ⚠️ Pode conter erros de pronúncia
-              </span>
+              <div className="font-bold text-white mb-1 group-hover:text-green-400 transition-colors">A. Manter como está</div>
+              <p className="text-xs text-slate-400">Usar o texto exatamente como digitei.</p>
             </button>
 
             <button
               onClick={() => handleValidationOption('B')}
               disabled={isValidating}
-              className="p-4 bg-indigo-900/30 hover:bg-indigo-900/50 border border-indigo-500/30 rounded-xl text-left transition-all hover:scale-[1.02]"
+              className="p-4 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-left transition-all group"
             >
-              <div className="font-bold text-indigo-300 mb-1">Corrigir Gramática</div>
-              <p className="text-xs text-slate-400">Ajusta pontuação e ortografia sem mudar o estilo.</p>
+              <div className="font-bold text-white mb-1 group-hover:text-blue-400 transition-colors">B. Corrigir Gramática</div>
+              <p className="text-xs text-slate-400">Ajustar pontuação e erros ortográficos apenas.</p>
             </button>
 
             <button
               onClick={() => handleValidationOption('C')}
               disabled={isValidating}
-              className="p-4 bg-purple-900/30 hover:bg-purple-900/50 border border-purple-500/30 rounded-xl text-left transition-all hover:scale-[1.02]"
+              className="p-4 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/50 rounded-xl text-left transition-all group md:col-span-2"
             >
-              <div className="font-bold text-purple-300 mb-1">Especialista em Roteiros</div>
-              <p className="text-xs text-slate-400">Reescreve para melhorar a fluidez e naturalidade.</p>
+              <div className="font-bold text-indigo-300 mb-1 group-hover:text-indigo-200 transition-colors">C. ✨ Melhorar com IA (Especialista)</div>
+              <p className="text-xs text-indigo-400/80">Reescrever para maior fluidez e naturalidade.</p>
+            </button>
+
+            <button
+              onClick={() => handleValidationOption('D')}
+              disabled={isValidating}
+              className="p-4 bg-red-600/20 hover:bg-red-600/30 border border-red-500/50 rounded-xl text-left transition-all group md:col-span-2"
+            >
+              <div className="font-bold text-red-300 mb-1 group-hover:text-red-200 transition-colors">D. 💥 ESTILO VAREJO (IMPACTO)</div>
+              <p className="text-xs text-red-400/80">Converter para CAIXA ALTA, adicionar ênfase em preços e urgência!</p>
             </button>
           </div>
 

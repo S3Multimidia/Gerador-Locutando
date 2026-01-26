@@ -119,11 +119,11 @@ export const Mixer: React.FC<MixerProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     // Mixing State
-    const [volumes, setVolumes] = useState({ opening: 1, voice: 1, background: 0.5, closing: 1 });
+    const [volumes, setVolumes] = useState({ opening: 1, voice: 1, background: 1, closing: 1 });
     const [mutes, setMutes] = useState({ opening: false, voice: false, background: false, closing: false });
 
     // Persistence
-    const { savedMixerState, saveMixerState } = useMixerPersistence({ opening: 1, voice: 1, background: 0.5, closing: 1 });
+    const { savedMixerState, saveMixerState } = useMixerPersistence({ opening: 1, voice: 1, background: 1, closing: 1 });
 
     // Load persistence
     useEffect(() => {
@@ -163,10 +163,10 @@ export const Mixer: React.FC<MixerProps> = ({
     // Fades & Crossfade
     const [crossfadeInDuration, setCrossfadeInDuration] = useState<number>(0.05);
     const [crossfadeOutDuration, setCrossfadeOutDuration] = useState<number>(0.05);
-    const [fadeInDuration, setFadeInDuration] = useState<number>(1.0);
-    const [fadeOutDuration, setFadeOutDuration] = useState<number>(1.5);
-    const [introDuration, setIntroDuration] = useState<number>(0);
-    const [outroDuration, setOutroDuration] = useState<number>(0);
+    const [fadeInDuration, setFadeInDuration] = useState<number>(1.0); // Default: 1.0s (Updated)
+    const [fadeOutDuration, setFadeOutDuration] = useState<number>(1.0); // Default: 1.0s
+    const [introDuration, setIntroDuration] = useState<number>(2.5); // Default: 2.5s
+    const [outroDuration, setOutroDuration] = useState<number>(2.5); // Default: 2.5s
 
     // Editing State (Destructive)
     const [processedBuffers, setProcessedBuffers] = useState<Record<string, AudioBuffer>>({}); // Base buffers (Manual Edits)
@@ -731,6 +731,7 @@ export const Mixer: React.FC<MixerProps> = ({
             // Just play it at the right time.
             const voiceSrc = offlineCtx.createBufferSource();
             voiceSrc.buffer = voiceBuffer;
+
             // No extra gain needed, it's baked in. But we need a node to connect.
             // Mute check:
             const voiceGain = offlineCtx.createGain();
@@ -743,26 +744,47 @@ export const Mixer: React.FC<MixerProps> = ({
             if (backgroundBuffer) {
                 const { src, gain } = createSource(backgroundBuffer, volumes.background, mutes.background);
 
-                // Fade In (if starting after opening)
+                // --- DUCKING LOGIC ---
+                // Target volume during voice: 20% of the set background volume
+                const duckedVolume = volumes.background * 0.2;
+                const fullVolume = volumes.background;
+                const rampTime = 1.0; // 1 second smoothing for ducking
+
+                // 1. Initial State (Start at full volume or fade in)
                 if (openingTrack) {
                     gain.gain.setValueAtTime(0.0001, backgroundStart);
-                    gain.gain.linearRampToValueAtTime(volumes.background, backgroundStart + crossfadeInDuration);
+                    gain.gain.linearRampToValueAtTime(fullVolume, backgroundStart + crossfadeInDuration);
                 } else {
                     gain.gain.setValueAtTime(0.0001, 0);
-                    gain.gain.linearRampToValueAtTime(volumes.background, fadeInDuration);
+                    gain.gain.linearRampToValueAtTime(fullVolume, fadeInDuration);
                 }
 
-                // Fade Out (at closing start or end of outro)
-                const bgEnd = closingTrack ? closingStart + crossfadeOutDuration : voiceEnd + outroDuration + fadeOutDuration;
+                // 2. Duck Down when Voice Starts
+                // Ensure we don't start ducking before background actually starts
+                const duckStart = Math.max(backgroundStart, voiceStart);
+                if (duckStart < totalDuration) { // Use totalDuration as a safe upper bound for ducking events
+                    gain.gain.setValueAtTime(fullVolume, duckStart);
+                    gain.gain.linearRampToValueAtTime(duckedVolume, duckStart + rampTime);
+                }
 
-                // Loop background if needed
-                src.loop = true;
+                // 3. Duck Up when Voice Ends
+                const duckEnd = voiceEnd; // Voice ends here
+                if (duckEnd < totalDuration) { // Use totalDuration as a safe upper bound for ducking events
+                    gain.gain.setValueAtTime(duckedVolume, duckEnd);
+                    gain.gain.linearRampToValueAtTime(fullVolume, duckEnd + rampTime);
+                }
 
+                // 4. Final Fade Out (at closing start or end of outro)
                 const fadeOutBegin = closingTrack ? closingStart : voiceEnd + outroDuration;
+                const bgEnd = closingTrack ? closingStart + closingDuration : voiceEnd + outroDuration + fadeOutDuration; // Re-calculate bgEnd for clarity
 
-                gain.gain.setValueAtTime(volumes.background, fadeOutBegin);
+                // Ensure we ramp from whatever volume we are at (likely fullVolume) to 0
+                // We set a checkpoint at fadeOutBegin to ensure smooth transition
+                gain.gain.setValueAtTime(fullVolume, fadeOutBegin);
                 gain.gain.linearRampToValueAtTime(0.0001, bgEnd);
 
+                // Start and Stop
+                src.loop = true;
                 src.start(backgroundStart);
                 src.stop(bgEnd);
             }
