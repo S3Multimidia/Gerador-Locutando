@@ -141,21 +141,27 @@ export const useVoiceGenerator = (
                 model: ttsModel,
                 contents: [{ parts: [{ text: textToUse }] }],
                 config: {
-                    // responseModalities: [Modality.AUDIO], // Removed to fix 400 error
+                    responseModalities: [Modality.AUDIO],
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: { voiceName: getVoiceName(voiceToUse.id) },
                         },
                     },
-                    // Note: Future API versions might support 'style_prompt' or similar for TTS modulation.
-                    // Currently rely on prebuilt voice characteristics.
                 },
             });
 
-            const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+            const part = response.candidates?.[0]?.content?.parts?.[0];
+            const base64Audio = part?.inlineData?.data;
+
             if (base64Audio) {
                 return await decodeAudioData(decode(base64Audio), audioContext, 24000, 1);
             } else {
+                // Check if text was returned (error message from model)
+                const textContent = part?.text;
+                if (textContent) {
+                    console.error("Model returned text instead of audio:", textContent);
+                    throw new Error(`Model error: ${textContent.slice(0, 100)}...`);
+                }
                 throw new Error("API response missing audio data.");
             }
         } catch (err: any) {
