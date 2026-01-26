@@ -546,7 +546,8 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
                         <div>
                             <label htmlFor="tts-model-select" className="block text-sm font-medium text-gray-700 mb-2">Modelo de IA para Geração de Voz (TTS)</label>
                             <select id="tts-model-select" value={ttsModel} onChange={e => setTtsModel(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg shadow-sm">
-                                <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash TTS</option>
+                                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (TTS)</option>
+                                <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash TTS (Preview)</option>
                             </select>
                             <p className="text-xs text-gray-500 mt-1">Este modelo converte o texto em áudio.</p>
                         </div>
