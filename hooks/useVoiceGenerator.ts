@@ -138,18 +138,21 @@ export const useVoiceGenerator = (
         try {
             const ai = new GoogleGenAI({ apiKey });
             console.log(`[TTS] Generating audio with model: ${ttsModel}, Voice: ${getVoiceName(voiceToUse.id)}`);
-            if (voiceToUse.prompt) {
+
+            // INCORPORATE PROMPT INTO TEXT content to avoid systemInstruction conflict with AUDIO modality
+            let finalPromptText = textToUse;
+            if (voiceToUse.prompt && voiceToUse.prompt.trim()) {
                 console.log(`[TTS] Applying style prompt: ${voiceToUse.prompt}`);
+                // We add the instruction at the beginning, but ask it to ONLY speak the text.
+                // Note: Generative Audio is sensitive. Too much instruction might be spoken.
+                // We format it as a context wrapper.
+                finalPromptText = `(Contexto de atuação: ${voiceToUse.prompt}) ${textToUse}`;
             }
 
             const response = await ai.models.generateContent({
                 model: ttsModel,
-                ...(voiceToUse.prompt && voiceToUse.prompt.trim() ? {
-                    systemInstruction: {
-                        parts: [{ text: `Aja como um locutor profissional. Sua instrução de estilo é: "${voiceToUse.prompt}". Leia apenas o texto fornecido, aplicando este estilo.` }]
-                    }
-                } : {}),
-                contents: [{ parts: [{ text: textToUse }] }],
+                // Removed systemInstruction to fix "Model does not support requested modality: AUDIO"
+                contents: [{ parts: [{ text: finalPromptText }] }],
                 config: {
                     responseModalities: [Modality.AUDIO],
                     speechConfig: {
