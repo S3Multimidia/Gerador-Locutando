@@ -154,7 +154,7 @@ export const useVoiceGenerator = (
                 // Removed systemInstruction to fix "Model does not support requested modality: AUDIO"
                 contents: [{ parts: [{ text: finalPromptText }] }],
                 config: {
-                    responseModalities: [Modality.AUDIO],
+                    // responseModalities: [Modality.AUDIO], // REMOVED: Causes 400 error on Flash 2.0 Exp REST API
                     speechConfig: {
                         voiceConfig: {
                             prebuiltVoiceConfig: { voiceName: getVoiceName(voiceToUse.id) },
