@@ -37,7 +37,7 @@ const App: React.FC = () => {
   const [isLoadingStorage, setIsLoadingStorage] = useState(true);
 
   // Force default to Flash model as per user's corrected screenshot preference
-  const [ttsModel, setTtsModel] = useState<string>('gemini-2.5-flash-preview-tts');
+  const [ttsModel, setTtsModel] = useState<string>('gemini-2.0-flash-tts');
   const [chatModel, setChatModel] = useState<string>(() => safeStorageGet('locutando_chatModel', 'gemini-2.5-pro'));
 
   // Persist Model Settings

@@ -147,6 +147,8 @@ export const useVoiceGenerator = (
                             prebuiltVoiceConfig: { voiceName: getVoiceName(voiceToUse.id) },
                         },
                     },
+                    // Note: Future API versions might support 'style_prompt' or similar for TTS modulation.
+                    // Currently rely on prebuilt voice characteristics.
                 },
             });
 
