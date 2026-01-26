@@ -59,15 +59,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
 
                     </div>
 
-                    {/* Temporary Email Login for Testing */}
-                    <div className="mt-6 p-4 bg-slate-700/50 rounded-xl border border-slate-600/50">
-                        <p className="text-xs text-slate-400 mb-2 text-center uppercase tracking-wider">Acesso Temporário (Dev)</p>
+                    {/* Email/Password Login */}
+                    <div className="mt-4">
                         <form
                             onSubmit={async (e) => {
                                 e.preventDefault();
                                 const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
-                                if (email) {
-                                    const result = await auth.login(email, '');
+                                const password = (e.currentTarget.elements.namedItem('password') as HTMLInputElement).value;
+                                if (email && password) {
+                                    const result = await auth.login(email, password);
                                     if (result.success) {
                                         onLoginSuccess(auth.userRole || 'user');
                                     } else {
@@ -75,18 +75,33 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
                                     }
                                 }
                             }}
-                            className="flex flex-col gap-2"
+                            className="flex flex-col gap-4"
                         >
-                            <input
-                                type="email"
-                                name="email"
-                                placeholder="Digite seu email..."
-                                className="w-full px-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
-                                required
-                            />
+                            <div className="space-y-1">
+                                <label className="text-xs text-slate-400 font-medium ml-1">Email</label>
+                                <input
+                                    type="email"
+                                    name="email"
+                                    placeholder="seu@email.com"
+                                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                                    required
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-xs text-slate-400 font-medium ml-1">Senha</label>
+                                <input
+                                    type="password"
+                                    name="password"
+                                    placeholder="••••••••"
+                                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all placeholder:text-slate-600"
+                                    required
+                                />
+                            </div>
+
                             <button
                                 type="submit"
-                                className="w-full py-2 bg-slate-600 hover:bg-slate-500 text-white text-sm font-medium rounded-lg transition-colors"
+                                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 mt-2"
                             >
                                 Entrar com Email
                             </button>
