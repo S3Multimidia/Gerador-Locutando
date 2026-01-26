@@ -20,7 +20,10 @@ def get_global_config(request):
         'apiKey': config.gemini_api_key, 
         'ttsModel': config.tts_model,
         'chatModel': config.chat_model,
-        'specialistPrompt': config.specialist_prompt
+        'specialistPrompt': config.specialist_prompt,
+        'supabaseUrl': config.supabase_url,
+        'supabaseKey': config.supabase_key,
+        'supabaseBucket': config.supabase_bucket
     })
 
 @api_view(['POST'])
@@ -40,6 +43,10 @@ def update_global_config(request):
     if 'ttsModel' in data: config.tts_model = data['ttsModel']
     if 'chatModel' in data: config.chat_model = data['chatModel']
     if 'specialistPrompt' in data: config.specialist_prompt = data['specialistPrompt']
+    
+    if 'supabaseUrl' in data: config.supabase_url = data['supabaseUrl']
+    if 'supabaseKey' in data: config.supabase_key = data['supabaseKey']
+    if 'supabaseBucket' in data: config.supabase_bucket = data['supabaseBucket']
     
     config.save()
     return Response({'status': 'updated'})

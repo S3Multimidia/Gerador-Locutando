@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { BackendService } from '../services/backend';
 
 // Define the shape of the site configuration
 export interface SiteConfig {
@@ -57,23 +58,50 @@ const SiteConfigContext = createContext<SiteConfigContextType | undefined>(undef
 export const SiteConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [config, setConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
 
-    // Load from localStorage on mount
+    // Load from backend on mount
     useEffect(() => {
+        const loadGlobalConfig = async () => {
+            try {
+                // Fetch Global Config from Admin API (Public route)
+                const res = await fetch(`${BackendService.API_URL}/api/storefront/config/`);
+                if (res.ok) {
+                    const serverConfig = await res.json();
+
+                    // Update Local State with Server Data
+                    setConfig(prev => ({
+                        ...prev,
+                        hero: {
+                            ...prev.hero,
+                            title: serverConfig.heroHeadline || prev.hero.title,
+                            subtitle: serverConfig.heroSubheadline || prev.hero.subtitle,
+                            // Could map colors here if SiteConfig supported it
+                        }
+                    }));
+
+                    // Inject AI Keys / Model Configs into Globals/LocalStorage for Client usage
+                    if (serverConfig.apiKey) localStorage.setItem('gemini_api_key_global', serverConfig.apiKey);
+                    if (serverConfig.googleClientId) localStorage.setItem('google_client_id_global', serverConfig.googleClientId);
+
+                    // Supabase
+                    if (serverConfig.supabaseUrl) localStorage.setItem('supabase_url', serverConfig.supabaseUrl);
+                    if (serverConfig.supabaseKey) localStorage.setItem('supabase_key', serverConfig.supabaseKey);
+
+                    console.log("Loaded global config from server:", serverConfig.siteTitle);
+                }
+            } catch (e) {
+                console.warn("Backend config unreachable, using cache/defaults", e);
+            }
+        };
+
+        loadGlobalConfig();
+
+        // Also load local backup
         const savedConfig = localStorage.getItem('locutando_site_config');
         if (savedConfig) {
             try {
                 const parsed = JSON.parse(savedConfig);
-                setConfig({
-                    ...DEFAULT_CONFIG,
-                    ...parsed,
-                    hero: { ...DEFAULT_CONFIG.hero, ...(parsed.hero || {}) },
-                    features: { ...DEFAULT_CONFIG.features, ...(parsed.features || {}) },
-                    pricing: { ...DEFAULT_CONFIG.pricing, ...(parsed.pricing || {}) },
-                    contact: { ...DEFAULT_CONFIG.contact, ...(parsed.contact || {}) }
-                });
-            } catch (e) {
-                console.error("Failed to parse site config", e);
-            }
+                setConfig(prev => ({ ...prev, ...parsed }));
+            } catch (e) { }
         }
     }, []);
 

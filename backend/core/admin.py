@@ -30,6 +30,10 @@ class GlobalConfigAdmin(admin.ModelAdmin):
         ('Evolution API (Legacy/Notifications)', {
             'fields': ('evolution_api_url', 'evolution_api_token', 'view_qr_code')
         }),
+        ('Supabase / Cloud (Client-Side & Storage)', {
+            'description': 'Configurações para o Frontend conectar ao Supabase (Auth/Realtime) e Storage. A conexão de BANCO DE DADOS do Backend deve ser feita via .ENV.',
+            'fields': ('supabase_url', 'supabase_key', 'supabase_bucket')
+        }),
     )
 
     def view_connection_status(self, obj):

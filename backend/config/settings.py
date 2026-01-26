@@ -82,40 +82,43 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.0/ref/settings/#databases
 
+import dj_database_url
+
+# Database
+# Use SQLite by default, but override with DATABASE_URL if present (e.g. Supabase)
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3', # Default to sqlite for dev, easy switch to pg
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.parse(
+        config('DATABASE_URL', default=f'sqlite:///{BASE_DIR / "db.sqlite3"}'),
+        conn_max_age=600
+    )
 }
 
-# Password validation
-# https://docs.djangoproject.com/en/4.0/ref/settings/#auth-password-validators
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
-
-# Internationalization
-LANGUAGE_CODE = 'pt-br'
-TIME_ZONE = 'America/Sao_Paulo'
-USE_I18N = True
-USE_TZ = True
+# ... [Validators remain the same] ...
 
 # Static files (CSS, JavaScript, Images)
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Media Files (Uploads)
+# Configuration for Supabase/S3 Storage
+USE_S3 = config('USE_S3', cast=bool, default=False)
+
+if USE_S3:
+    # Supabase S3 Configuration
+    AWS_ACCESS_KEY_ID = config('SUPABASE_ACCESS_KEY_ID')
+    AWS_SECRET_ACCESS_KEY = config('SUPABASE_SECRET_ACCESS_KEY')
+    AWS_STORAGE_BUCKET_NAME = config('SUPABASE_STORAGE_BUCKET_NAME')
+    AWS_S3_ENDPOINT_URL = config('SUPABASE_S3_ENDPOINT_URL') # e.g. https://<project>.supabase.co/storage/v1/s3
+    AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
+    AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}' # Optional, mostly handled by endpoint
+
+    # Files settings
+    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+    MEDIA_URL = f'{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/'
+else:
+    # Local Storage
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

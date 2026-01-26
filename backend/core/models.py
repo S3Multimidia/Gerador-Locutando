@@ -27,6 +27,11 @@ class GlobalConfig(models.Model):
     gemini_api_key = models.CharField(max_length=255, blank=True, help_text="Chave Global (Opcional - usuários podem ter a própria)")
     google_client_id = models.CharField(max_length=255, blank=True)
     
+    # Supabase Config
+    supabase_url = models.CharField("Supabase URL", max_length=255, blank=True)
+    supabase_key = models.CharField("Supabase Public Key", max_length=255, blank=True)
+    supabase_bucket = models.CharField("Bucket Storage", max_length=100, default='media')
+
     tts_model = models.CharField(max_length=100, default='gemini-2.5-flash-preview-tts')
     chat_model = models.CharField(max_length=100, default='gemini-2.5-flash')
     
