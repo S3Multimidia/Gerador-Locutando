@@ -32,10 +32,31 @@ export const initDB = (): Promise<IDBDatabase> => {
 };
 
 import { BackendService } from '../services/backend';
+import { supabase } from '../utils/supabaseClient';
 
 export const saveVoices = async (voices: Voice[]): Promise<void> => {
     try {
-        // Backend sync removed for Serverless Mode. using IndexedDB directly.
+        // Save to Supabase (Source of Truth)
+        if (voices.length > 0) {
+            // Upsert (Insert or Update) all voices
+            const { error } = await supabase
+                .from('voices')
+                .upsert(voices.map(v => ({
+                    id: v.id,
+                    name: v.name,
+                    display_name: v.displayName, // Map displayName -> display_name
+                    gender: v.gender,
+                    language: v.language || 'pt-BR',
+                    image_url: v.imageUrl,
+                    demo_url: v.demoUrl, // Map demoUrl -> demo_url
+                    description: v.description,
+                    prompt: v.prompt
+                })), { onConflict: 'id' });
+
+            if (error) console.error("Supabase Save Error:", error);
+        }
+
+        // Also update IndexedDB for offline capability/cache
         const db = await initDB();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_VOICES], 'readwrite');
@@ -59,7 +80,33 @@ export const saveVoices = async (voices: Voice[]): Promise<void> => {
 };
 
 export const getVoices = async (): Promise<Voice[]> => {
-    // 1. Backend sync removed. Try IndexedDB First.
+    // 1. Try Supabase First (Cloud Source)
+    try {
+        const { data, error } = await supabase.from('voices').select('*');
+
+        if (!error && data && data.length > 0) {
+            // Map Supabase Columns (snake_case) to Frontend Type (camelCase)
+            const supabaseVoices: Voice[] = data.map((row: any) => ({
+                id: row.id,
+                name: row.name,
+                displayName: row.display_name || row.name,
+                gender: row.gender as 'Masculino' | 'Feminino',
+                language: row.language as 'pt-BR' | 'en-US',
+                description: row.description || '',
+                prompt: row.prompt || '',
+                imageUrl: row.image_url || '',
+                demoUrl: row.demo_url || '',
+            }));
+
+            // Update local cache
+            saveVoicesToCache(supabaseVoices);
+            return supabaseVoices;
+        }
+    } catch (e) {
+        console.warn('Supabase voices unreachable, trying cache/defaults...', e);
+    }
+
+    // 2. Fallback to IndexedDB (as before)
     try {
         const db = await initDB();
         const cachedVoices = await new Promise<Voice[]>((resolve, reject) => {
@@ -73,7 +120,7 @@ export const getVoices = async (): Promise<Voice[]> => {
         if (cachedVoices && cachedVoices.length > 0) return cachedVoices;
     } catch (e) { /* ignore */ }
 
-    // 2. Fallback to Constants
+    // 3. Fallback to Constants
     return INITIAL_VOICES;
 };
 
