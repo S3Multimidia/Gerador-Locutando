@@ -102,6 +102,32 @@ export const useAuth = () => {
   };
 
 
+  const loginWithGoogle = async (): Promise<{ success: boolean; message?: string }> => {
+    try {
+      // Get the current URL for redirection back after Google login
+      const redirectTo = window.location.origin;
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectTo,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      // The user will be redirected to Google, so we don't return success immediately
+      return { success: true };
+    } catch (error: any) {
+      console.error("Google Login failed", error);
+      return { success: false, message: error.message || 'Falha ao iniciar login com Google.' };
+    }
+  };
+
   const loginWithGoogleToken = async (credentialResponse: any): Promise<{ success: boolean; message?: string }> => {
     // NOTE: This is Google Sign-In via @react-oauth/google (Client Side)
     // To integrate with Supabase properly, we should ideally use supabase.auth.signInWithOAuth({ provider: 'google' })
