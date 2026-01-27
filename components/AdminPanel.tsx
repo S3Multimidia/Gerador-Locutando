@@ -317,7 +317,11 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
                                     </select>
                                     <input type="password" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} placeholder="Senha" required className="p-2 border rounded md:col-span-2" />
                                 </div>
-                                <button type="submit" className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">Salvar Usuário</button>
+                                <button type="submit" className="px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">Salvar Usuário (Visual)</button>
+                                <p className="text-xs text-orange-600 mt-2 bg-orange-50 p-2 rounded border border-orange-200">
+                                    <strong>Nota Importante:</strong> Ao criar um usuário aqui, você define as permissões dele (Admin/User).
+                                    Para que ele consiga fazer <strong>Login</strong>, você também precisa ir no painel do <strong>Supabase {'>'} Authentication {'>'} Users</strong> e criar a conta com o mesmo e-mail e senha.
+                                </p>
                             </form>
                         )}
                         <div className="overflow-x-auto">
