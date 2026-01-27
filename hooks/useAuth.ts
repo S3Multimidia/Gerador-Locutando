@@ -194,7 +194,8 @@ export const useAuth = () => {
     users,
     setUsers,
     login,
-    loginWithGoogleToken, // Kept for Google Button compatibility
+    loginWithGoogle, // Export the Supabase OAuth function
+    loginWithGoogleToken, // Kept for legacy if needed
     logout
   };
 };
