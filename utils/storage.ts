@@ -34,24 +34,8 @@ export const initDB = (): Promise<IDBDatabase> => {
 import { BackendService } from '../services/backend';
 
 export const saveVoices = async (voices: Voice[]): Promise<void> => {
-    // Save to Backend (Source of Truth)
     try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${BackendService.API_URL}/api/storefront/voices/sync/`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Token ${token}` } : {})
-            },
-            body: JSON.stringify(voices)
-        });
-
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`Failed to save to backend: ${err}`);
-        }
-
-        // Also update IndexedDB for offline capability/cache
+        // Backend sync removed for Serverless Mode. using IndexedDB directly.
         const db = await initDB();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction([STORE_VOICES], 'readwrite');
@@ -75,22 +59,7 @@ export const saveVoices = async (voices: Voice[]): Promise<void> => {
 };
 
 export const getVoices = async (): Promise<Voice[]> => {
-    // 1. Try Backend First
-    try {
-        const res = await fetch(`${BackendService.API_URL}/api/storefront/voices/`);
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-                // Update local cache
-                saveVoicesToCache(data);
-                return data;
-            }
-        }
-    } catch (e) {
-        console.warn('Backend unavailable or empty, trying cache/defaults...', e);
-    }
-
-    // 2. Fallback to IndexedDB
+    // 1. Backend sync removed. Try IndexedDB First.
     try {
         const db = await initDB();
         const cachedVoices = await new Promise<Voice[]>((resolve, reject) => {
@@ -104,7 +73,7 @@ export const getVoices = async (): Promise<Voice[]> => {
         if (cachedVoices && cachedVoices.length > 0) return cachedVoices;
     } catch (e) { /* ignore */ }
 
-    // 3. Fallback to Constants
+    // 2. Fallback to Constants
     return INITIAL_VOICES;
 };
 
@@ -149,23 +118,7 @@ export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
 };
 
 export const getTracks = async (): Promise<TrackInfo[]> => {
-    // 1. Try Backend First
-    try {
-        const res = await fetch(`${BackendService.API_URL}/api/storefront/tracks/`);
-        if (res.ok) {
-            const data = await res.json();
-            if (Array.isArray(data) && data.length > 0) {
-                // Save to cache optional, but good for offline.
-                // Ideally we cache the URLs or depend on browser cache.
-                saveTracksToCache(data);
-                return data;
-            }
-        }
-    } catch (e) {
-        console.warn('Backend unavailable (tracks), trying cache...', e);
-    }
-
-    // 2. Fallback to IndexedDB
+    // 1. Backend sync removed. Try IndexedDB First.
     try {
         const db = await initDB();
         const cachedTracks = await new Promise<TrackInfo[]>((resolve, reject) => {
@@ -179,7 +132,7 @@ export const getTracks = async (): Promise<TrackInfo[]> => {
         if (cachedTracks && cachedTracks.length > 0) return cachedTracks;
     } catch (e) { /* ignore */ }
 
-    // 3. Fallback
+    // 2. Fallback
     return INITIAL_BACKGROUND_TRACKS;
 };
 
