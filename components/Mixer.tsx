@@ -576,7 +576,7 @@ export const Mixer: React.FC<MixerProps> = ({
 
         // Determine buffer and volume based on trackName
         if (trackName === 'voice') {
-            buffer = processedVoiceBuffer; // Use processed buffer
+            buffer = finalBuffers['voice'] || processedVoiceBuffer; // Use processed buffer (with silence removed)
             volume = 1.0; // Volume is already baked into processed buffer
             isVoice = true;
         } else if (trackName === 'opening') {
@@ -1013,7 +1013,7 @@ export const Mixer: React.FC<MixerProps> = ({
                     <div className="space-y-4">
                         <TrackChannel
                             title="Voz (Locução)"
-                            track={{ buffer: processedVoiceBuffer, fileName: 'Locução Gerada' }}
+                            track={{ buffer: finalBuffers['voice'] || processedVoiceBuffer, fileName: 'Locução Gerada' }}
                             volume={volumes.voice}
                             isMuted={mutes.voice}
                             onVolumeChange={(v) => setVolumes(prev => ({ ...prev, voice: v }))}
