@@ -5,7 +5,7 @@ import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { SystemConfigTab } from './Admin/SystemConfigTab';
 import { BackendService } from '../services/backend';
 import { supabase } from '../utils/supabaseClient';
-import { saveVoices, saveTracks } from '../utils/storage';
+import { saveVoices, saveTracks, deleteVoice } from '../utils/storage';
 
 
 interface AdminPanelProps {
@@ -298,10 +298,17 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
     };
 
     const handleRemoveVoice = async (voiceId: string) => {
-        if (window.confirm('Tem certeza que deseja remover esta voz?')) {
-            const updatedVoices = voices.filter(v => v.id !== voiceId);
-            setVoices(updatedVoices);
-            await saveVoices(updatedVoices); // Persist to Supabase
+        if (window.confirm('Atenção: Esta ação excluirá a voz permanentemente do banco de dados. Continuar?')) {
+            try {
+                // Remove from DB (Official)
+                await deleteVoice(voiceId);
+
+                // Remove from UI (Optimistic)
+                const updatedVoices = voices.filter(v => v.id !== voiceId);
+                setVoices(updatedVoices);
+            } catch (e: any) {
+                alert('Erro ao excluir do banco de dados: ' + e.message);
+            }
         }
     };
 

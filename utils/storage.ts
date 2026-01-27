@@ -101,6 +101,11 @@ export const getVoices = async (): Promise<Voice[]> => {
             // Update local cache
             saveVoicesToCache(supabaseVoices);
             return supabaseVoices;
+        } else if (data && data.length === 0 && !error) {
+            // If explicit empty list from DB, it means user deleted everything.
+            // Do NOT fallback to INITIAL_VOICES locally.
+            saveVoicesToCache([]);
+            return [];
         }
     } catch (e) {
         console.warn('Supabase voices unreachable, trying cache/defaults...', e);
@@ -123,6 +128,24 @@ export const getVoices = async (): Promise<Voice[]> => {
     // 3. Fallback to Constants
     return INITIAL_VOICES;
 };
+
+export const deleteVoice = async (id: string): Promise<void> => {
+    try {
+        const { error } = await supabase.from('voices').delete().eq('id', id);
+        if (error) throw error;
+
+        // Update local cache too
+        const db = await initDB();
+        const transaction = db.transaction([STORE_VOICES], 'readwrite');
+        const store = transaction.objectStore(STORE_VOICES);
+        store.delete(id);
+    } catch (e) {
+        console.error("Error deleting voice:", e);
+        throw e;
+    }
+};
+
+
 
 // Helper for caching without triggering recursive backend save
 const saveVoicesToCache = async (voices: Voice[]) => {
