@@ -163,7 +163,7 @@ export const Mixer: React.FC<MixerProps> = ({
     // Fades & Crossfade
     const [crossfadeInDuration, setCrossfadeInDuration] = useState<number>(0.05);
     const [crossfadeOutDuration, setCrossfadeOutDuration] = useState<number>(0.05);
-    const [fadeInDuration, setFadeInDuration] = useState<number>(1.0); // Default: 1.0s (Updated)
+    const [fadeInDuration, setFadeInDuration] = useState<number>(1.0); // Default: 1.0s
     const [fadeOutDuration, setFadeOutDuration] = useState<number>(1.0); // Default: 1.0s
     const [introDuration, setIntroDuration] = useState<number>(2.5); // Default: 2.5s
     const [outroDuration, setOutroDuration] = useState<number>(2.5); // Default: 2.5s
