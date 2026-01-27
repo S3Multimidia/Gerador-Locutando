@@ -253,28 +253,60 @@ export const useVoiceGenerator = (
             // 3. Remove silences from voice for cleaner audio
             const cleanedVoiceBuffer = removeSilence(voiceBuffer, -50, 0.5);
 
-            const startPad = 3.0; // Background track plays 3s before voice starts
-            const endPad = 3.0;   // Background track continues 3s after voice ends
-            const backgroundVolume = 0.15;
-            const outputDuration = startPad + cleanedVoiceBuffer.duration + endPad;
+            // CONFIGURAÇÃO DE MIXAGEM (Rádio Profissional / Pedido do Usuário)
+            const INTRO_DURATION = 2.5; // Tempo de trilha antes da voz
+            const OUTRO_DURATION = 2.5; // Tempo de trilha após a voz
+            const FADE_IN_DURATION = 1.0; // Fade In inicial
+            const FADE_OUT_DURATION = 1.0; // Fade Out final (no último segundo do Outro)
+            const DUCKING_TRANSITION = 1.0; // Tempo para abaixar de 100% para 20%
+
+            // VOLUMES
+            const MUSIC_HIGH = 1.0; // 100% (Intro)
+            const MUSIC_LOW = 0.2;  // 20% (Durante e Pós Voz - NÃO VOLTA PRA 100%)
+
+            const voiceDuration = cleanedVoiceBuffer.duration;
+            const outputDuration = INTRO_DURATION + voiceDuration + OUTRO_DURATION;
 
             const offlineCtx = new OfflineAudioContext(2, Math.ceil(audioContext!.sampleRate * outputDuration), audioContext!.sampleRate);
 
+            // 1. CANAL DE VOZ
             const voiceSource = offlineCtx.createBufferSource();
             voiceSource.buffer = cleanedVoiceBuffer;
             voiceSource.connect(offlineCtx.destination);
-            voiceSource.start(startPad);
+            // Voz entra exatamente após a INTRO
+            voiceSource.start(INTRO_DURATION);
 
+            // 2. CANAL DE TRILHA (BACKGROUND)
             const bgSource = offlineCtx.createBufferSource();
             bgSource.buffer = bgBuffer;
             const bgGain = offlineCtx.createGain();
             bgSource.connect(bgGain);
             bgGain.connect(offlineCtx.destination);
 
-            bgGain.gain.setValueAtTime(0.0001, 0);
-            bgGain.gain.linearRampToValueAtTime(backgroundVolume, 0.8);
-            bgGain.gain.setValueAtTime(backgroundVolume, Math.max(0, outputDuration - 3));
-            bgGain.gain.linearRampToValueAtTime(0.0001, outputDuration);
+            // LINHA DO TEMPO DA AUTOMAÇÃO
+            const now = 0;
+            const voiceStart = INTRO_DURATION;
+            const end = outputDuration;
+
+            // Começa zerado
+            bgGain.gain.setValueAtTime(0.0001, now);
+
+            // Fade In (0 -> 100%) em 1s
+            bgGain.gain.linearRampToValueAtTime(MUSIC_HIGH, now + FADE_IN_DURATION);
+
+            // Mantém 100% até a voz começar
+            bgGain.gain.setValueAtTime(MUSIC_HIGH, voiceStart);
+
+            // Duck Down (100% -> 20%) assim que a voz entra (gradual de 1s)
+            bgGain.gain.linearRampToValueAtTime(MUSIC_LOW, voiceStart + DUCKING_TRANSITION);
+
+            // OBS: O usuário pediu para NÃO voltar a 100% ("errado na saida de voz a trilha volta pra 100%")
+            // Então mantemos em 20% (MUSIC_LOW) até o Fade Out final.
+            bgGain.gain.setValueAtTime(MUSIC_LOW, end - FADE_OUT_DURATION);
+
+            // Fade Out Final (20% -> 0%) no último segundo
+            bgGain.gain.linearRampToValueAtTime(0.0001, end);
+
             bgSource.start(0);
 
             const mixed = await offlineCtx.startRendering();
