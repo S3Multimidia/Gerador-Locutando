@@ -22,6 +22,13 @@ export interface SiteConfig {
         email: string;
         whatsapp: string;
     };
+    apiKeys?: {
+        googleApiKey?: string;
+        googleClientId?: string;
+    };
+    prompts?: {
+        specialist?: string;
+    };
 }
 
 // Default configuration
@@ -44,6 +51,13 @@ const DEFAULT_CONFIG: SiteConfig = {
     contact: {
         email: "contato@locutando.com.br",
         whatsapp: ""
+    },
+    apiKeys: {
+        googleApiKey: "",
+        googleClientId: ""
+    },
+    prompts: {
+        specialist: ""
     }
 };
 

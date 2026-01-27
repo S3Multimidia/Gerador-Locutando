@@ -258,10 +258,30 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
         }
     };
 
-    const handleSaveApiKey = () => { localStorage.setItem('apiKey', apiKey); alert('Chave de API salva com sucesso!'); };
-    const handleSaveAssistantApiKey = () => { localStorage.setItem('assistantApiKey', assistantApiKey); alert('Chave do Assistente salva com sucesso!'); };
-    const handleSaveGoogleClientId = () => { localStorage.setItem('googleClientId', googleClientId); alert('Client ID salvo com sucesso!'); };
-    const handleSaveSpecialistPrompt = () => { localStorage.setItem('specialistPrompt', specialistPrompt); alert('Prompt do Especialista salvo com sucesso!'); };
+    // Sync Local State with Config when loaded
+    useEffect(() => {
+        if (config.apiKeys) {
+            if (config.apiKeys.googleApiKey) setApiKey(config.apiKeys.googleApiKey);
+            if (config.apiKeys.googleClientId) setGoogleClientId(config.apiKeys.googleClientId);
+        }
+        if (config.prompts && config.prompts.specialist) {
+            setSpecialistPrompt(config.prompts.specialist);
+        }
+    }, [config]);
+
+    const handleSaveApiKey = () => {
+        updateConfig({ apiKeys: { ...config.apiKeys, googleApiKey: apiKey } });
+        alert('Chave de API salva no Banco de Dados!');
+    };
+    const handleSaveAssistantApiKey = () => { localStorage.setItem('assistantApiKey', assistantApiKey); alert('Chave do Assistente salva (Local)!'); };
+    const handleSaveGoogleClientId = () => {
+        updateConfig({ apiKeys: { ...config.apiKeys, googleClientId: googleClientId } });
+        alert('Client ID salvo no Banco de Dados!');
+    };
+    const handleSaveSpecialistPrompt = () => {
+        updateConfig({ prompts: { ...config.prompts, specialist: specialistPrompt } });
+        alert('Prompt do Especialista salvo no Banco de Dados!');
+    };
 
     const handleAddVoice = async (e: React.FormEvent) => {
         e.preventDefault();
