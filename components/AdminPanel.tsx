@@ -4,6 +4,7 @@ import { ShieldIcon, UserIcon, MicIcon, MusicIcon, SettingsIcon, TrashIcon, Edit
 import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { SystemConfigTab } from './Admin/SystemConfigTab';
 import { BackendService } from '../services/backend';
+import { supabase } from '../utils/supabaseClient';
 
 interface AdminPanelProps {
     voices: Voice[];
@@ -134,52 +135,90 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
     const [specialistPrompt, setSpecialistPrompt] = useState<string>(localStorage.getItem('specialistPrompt') || DEFAULT_SPECIALIST_PROMPT);
 
     // Handlers
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files && e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => setNewVoice(prev => ({ ...prev, imageUrl: String(reader.result) }));
-        reader.readAsDataURL(file);
+    // --- Supabase Upload Helper ---
+    const uploadToSupabase = async (file: File, folder: 'voices' | 'demos' | 'tracks'): Promise<string | null> => {
+        try {
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+            const { error: uploadError } = await supabase.storage
+                .from('media')
+                .upload(fileName, file);
+
+            if (uploadError) {
+                console.error('Upload Error:', uploadError);
+                alert('Erro ao fazer upload: ' + uploadError.message);
+                return null;
+            }
+
+            const { data } = supabase.storage.from('media').getPublicUrl(fileName);
+            return data.publicUrl;
+        } catch (error) {
+            console.error('Upload Exception:', error);
+            return null;
+        }
     };
 
-    const handleDemoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files && e.target.files[0];
+    // Handlers
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => setNewVoice(prev => ({ ...prev, demoUrl: String(reader.result) }));
-        reader.readAsDataURL(file);
+
+        const publicUrl = await uploadToSupabase(file, 'voices');
+        if (publicUrl) {
+            setNewVoice(prev => ({ ...prev, imageUrl: publicUrl }));
+        }
     };
 
-    const handleDefaultTrackUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files && e.target.files[0];
+    const handleDemoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => setNewVoice(prev => ({ ...prev, defaultTrackUrl: String(reader.result) }));
-        reader.readAsDataURL(file);
+
+        const publicUrl = await uploadToSupabase(file, 'demos');
+        if (publicUrl) {
+            setNewVoice(prev => ({ ...prev, demoUrl: publicUrl }));
+        }
     };
 
-    const handleEditImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files && e.target.files[0];
+    const handleDefaultTrackUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => setEditingVoice(prev => ({ ...prev, imageUrl: String(reader.result) }));
-        reader.readAsDataURL(file);
+
+        const publicUrl = await uploadToSupabase(file, 'tracks');
+        if (publicUrl) {
+            setNewVoice(prev => ({ ...prev, defaultTrackUrl: publicUrl }));
+        }
     };
 
-    const handleEditDemoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files && e.target.files[0];
+    // Edit Handlers (Reusing logic)
+    const handleEditImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => setEditingVoice(prev => ({ ...prev, demoUrl: String(reader.result) }));
-        reader.readAsDataURL(file);
+
+        const publicUrl = await uploadToSupabase(file, 'voices');
+        if (publicUrl) {
+            setEditingVoice(prev => ({ ...prev, imageUrl: publicUrl }));
+        }
     };
 
-    const handleEditDefaultTrackUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files && e.target.files[0];
+    const handleEditDemoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => setEditingVoice(prev => ({ ...prev, defaultTrackUrl: String(reader.result) }));
-        reader.readAsDataURL(file);
+
+        const publicUrl = await uploadToSupabase(file, 'demos');
+        if (publicUrl) {
+            setEditingVoice(prev => ({ ...prev, demoUrl: publicUrl }));
+        }
+    };
+
+    const handleEditDefaultTrackUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const publicUrl = await uploadToSupabase(file, 'tracks');
+        if (publicUrl) {
+            setEditingVoice(prev => ({ ...prev, defaultTrackUrl: publicUrl }));
+        }
     };
 
     const startEditVoice = (v: Voice) => {
@@ -203,15 +242,15 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
         setEditingVoice(newVoiceInitialState);
     };
 
-    const handleTrackFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files && e.target.files[0];
+    const handleTrackFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            const dataUrl = String(reader.result);
-            setNewTrack(prev => ({ ...prev, name: prev.name || file.name, url: dataUrl }));
-        };
-        reader.readAsDataURL(file);
+
+        // Use generic uploader
+        const publicUrl = await uploadToSupabase(file, 'tracks');
+        if (publicUrl) {
+            setNewTrack(prev => ({ ...prev, name: prev.name || file.name, url: publicUrl }));
+        }
     };
 
     const handleSaveApiKey = () => { localStorage.setItem('apiKey', apiKey); alert('Chave de API salva com sucesso!'); };
