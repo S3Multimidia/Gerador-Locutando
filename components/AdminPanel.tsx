@@ -44,11 +44,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
     const [activeTab, setActiveTab] = useState<AdminTab>('users');
     const { config, updateConfig } = useSiteConfig();
-    const [isBackendOnline, setIsBackendOnline] = useState(true);
 
-    useEffect(() => {
-        BackendService.checkHealth().then(online => setIsBackendOnline(online));
-    }, []);
 
     // Voice State
     const [showAddVoiceForm, setShowAddVoiceForm] = useState(false);
@@ -818,12 +814,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
                 <ShieldIcon className="w-8 h-8 text-red-600 mr-3" />
                 <h2 className="text-4xl font-extrabold text-gray-900">Painel Administrativo</h2>
             </div>
-            {!isBackendOnline && (
-                <div className="mb-6 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-sm">
-                    <p className="font-bold">Backend Offline</p>
-                    <p>O servidor não está respondendo na porta 8000. Certifique-se de iniciar o Django: <code>python manage.py runserver</code></p>
-                </div>
-            )}
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
                 <aside className="md:col-span-1">
                     <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-200 space-y-2">
