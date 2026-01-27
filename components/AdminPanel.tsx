@@ -5,6 +5,8 @@ import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { SystemConfigTab } from './Admin/SystemConfigTab';
 import { BackendService } from '../services/backend';
 import { supabase } from '../utils/supabaseClient';
+import { saveVoices, saveTracks } from '../utils/storage';
+
 
 interface AdminPanelProps {
     voices: Voice[];
@@ -226,15 +228,18 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
         setEditingVoice(v);
     };
 
-    const saveEditVoice = () => {
+    const saveEditVoice = async () => {
         if (!editingVoiceId) return;
         if (editingVoice.id !== editingVoiceId && voices.some(v => v.id === editingVoice.id)) {
             alert('Erro: Já existe uma voz com este ID. Escolha outro ou remova a voz existente.');
             return;
         }
-        setVoices(voices.map(v => v.id === editingVoiceId ? editingVoice : v));
+        const updatedVoices = voices.map(v => v.id === editingVoiceId ? editingVoice : v);
+        setVoices(updatedVoices);
+        await saveVoices(updatedVoices); // Persist to Supabase
         setEditingVoiceId(null);
         setEditingVoice(newVoiceInitialState);
+        alert('Alterações salvas!');
     };
 
     const cancelEditVoice = () => {
@@ -258,33 +263,42 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
     const handleSaveGoogleClientId = () => { localStorage.setItem('googleClientId', googleClientId); alert('Client ID salvo com sucesso!'); };
     const handleSaveSpecialistPrompt = () => { localStorage.setItem('specialistPrompt', specialistPrompt); alert('Prompt do Especialista salvo com sucesso!'); };
 
-    const handleAddVoice = (e: React.FormEvent) => {
+    const handleAddVoice = async (e: React.FormEvent) => {
         e.preventDefault();
         if (voices.some(v => v.id === newVoice.id)) {
             alert('Erro: Já existe uma voz com este ID.');
             return;
         }
-        setVoices([...voices, newVoice]);
+        const updatedVoices = [...voices, newVoice];
+        setVoices(updatedVoices);
+        await saveVoices(updatedVoices); // Persist to Supabase
         setNewVoice(newVoiceInitialState);
         setShowAddVoiceForm(false);
+        alert('Voz salva com sucesso!');
     };
 
-    const handleRemoveVoice = (voiceId: string) => {
+    const handleRemoveVoice = async (voiceId: string) => {
         if (window.confirm('Tem certeza que deseja remover esta voz?')) {
-            setVoices(voices.filter(v => v.id !== voiceId));
+            const updatedVoices = voices.filter(v => v.id !== voiceId);
+            setVoices(updatedVoices);
+            await saveVoices(updatedVoices); // Persist to Supabase
         }
     };
 
-    const handleAddTrack = (e: React.FormEvent) => {
+    const handleAddTrack = async (e: React.FormEvent) => {
         e.preventDefault();
-        setTracks([...tracks, newTrack]);
+        const updatedTracks = [...tracks, newTrack];
+        setTracks(updatedTracks);
+        await saveTracks(updatedTracks); // Persist
         setNewTrack({ name: '', url: '' });
         setShowAddTrackForm(false);
     };
 
-    const handleRemoveTrack = (trackName: string) => {
+    const handleRemoveTrack = async (trackName: string) => {
         if (window.confirm('Tem certeza que deseja remover esta trilha?')) {
-            setTracks(tracks.filter(t => t.name !== trackName));
+            const updatedTracks = tracks.filter(t => t.name !== trackName);
+            setTracks(updatedTracks);
+            await saveTracks(updatedTracks); // Persist
         }
     };
 

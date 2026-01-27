@@ -71,6 +71,8 @@ export const SiteConfigProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                     .single();
 
                 if (error) {
+                    console.error('Supabase Config Save Error:', error);
+                    alert('Erro ao salvar configuração na nuvem: ' + error.message);
                     console.warn("Supabase Config Error (Using Local/Defaults):", error.message);
                     throw error;
                 }
