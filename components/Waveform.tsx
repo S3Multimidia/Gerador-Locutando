@@ -37,34 +37,77 @@ export const Waveform: React.FC<WaveformProps> = ({
     const isDragging = useRef(false);
     const dragStartX = useRef(0);
 
+    const [hoverTime, setHoverTime] = React.useState<number | null>(null);
+
+    // Resize Observer to handle flexible layouts
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
+        const resizeObserver = new ResizeObserver(() => {
+            // Trigger re-render by forcing update (or rely on parent resize causing prop change)
+            // Ideally, we just re-run the drawing logic.
+            // Since draw logic is in useEffect dependent on buffer/zoom, we can just setState to force render?
+            // Actually, let's just use a ref to track if we need to redraw, but the simple way is relying on React re-render.
+            // But canvas size changing doesn't trigger React render unless state changes.
+            if (canvas.parentElement) {
+                // Determine new dimensions
+                const rect = canvas.parentElement.getBoundingClientRect();
+                if (canvas.width !== rect.width * (window.devicePixelRatio || 1)) {
+                    // Force update
+                    drawWaveform();
+                }
+            }
+        });
+
+        if (canvas.parentElement) {
+            resizeObserver.observe(canvas.parentElement);
+        }
+
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    // Extract drawing logic to reused function
+    const drawWaveform = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
         const container = canvas.parentElement;
         if (!container) return;
-
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        const containerHeight = container.clientHeight;
+        // Always measure container for accurate sizing
+        const rect = container.getBoundingClientRect();
+
         const displayWidth = width || rect.width;
-        const displayHeight = height || containerHeight || 200;
+        const displayHeight = height || rect.height || 200;
 
-        canvas.width = displayWidth * dpr;
-        canvas.height = displayHeight * dpr;
+        // Only resize canvas buffer if dimensions changed to avoid flickering
+        if (canvas.width !== displayWidth * dpr || canvas.height !== displayHeight * dpr) {
+            canvas.width = displayWidth * dpr;
+            canvas.height = displayHeight * dpr;
+            ctx.scale(dpr, dpr);
+        } else {
+            // Just clear if size matches
+            ctx.clearRect(0, 0, displayWidth, displayHeight);
+        }
 
-        ctx.scale(dpr, dpr);
+        // Reset transform to ensure clean drawing if we didn't resize
+        // Actually, if we didn't resize (and didn't context.scale), we need to check.
+        // Good practice: Always reset transform and clear using logical coords?
+        // Let's stick to the resize logic: if resized, scale is set. If not, scale persists.
+        // To be safe:
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, displayWidth, displayHeight);
+
 
         if (!buffer) {
             ctx.beginPath();
             ctx.moveTo(0, displayHeight / 2);
             ctx.lineTo(displayWidth, displayHeight / 2);
-            ctx.strokeStyle = '#e2e8f0';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#334155'; // Slate-700
+            ctx.lineWidth = 1;
             ctx.stroke();
             return;
         }
@@ -73,11 +116,15 @@ export const Waveform: React.FC<WaveformProps> = ({
         const visibleDuration = duration / zoom;
         const viewEnd = viewStart + visibleDuration;
 
+        // Helper to convert time to X position
+        const timeToX = (time: number) => {
+            return ((time - viewStart) / visibleDuration) * displayWidth;
+        };
+
         // Draw Waveform
         const data = buffer.getChannelData(0);
         const totalSamples = data.length;
 
-        // Calculate start and end samples for the visible view
         const startSample = Math.floor((viewStart / duration) * totalSamples);
         const endSample = Math.floor((viewEnd / duration) * totalSamples);
         const visibleSamples = endSample - startSample;
@@ -90,13 +137,39 @@ export const Waveform: React.FC<WaveformProps> = ({
         ctx.fillStyle = color;
         ctx.beginPath();
 
+        // Optimized drawing loop
         for (let i = 0; i < displayWidth; i++) {
             let min = 1.0;
             let max = -1.0;
 
+            // Map pixel i to sample index range
+            // current time for pixel i = viewStart + (i/width)*visibleDuration
+            // sample index = (time/duration) * totalSamples
+
+            const pixelTimeStart = viewStart + (i / displayWidth) * visibleDuration;
+            const pixelTimeEnd = viewStart + ((i + 1) / displayWidth) * visibleDuration;
+
+            const idxStart = Math.floor((pixelTimeStart / duration) * totalSamples);
+            const idxEnd = Math.floor((pixelTimeEnd / duration) * totalSamples);
+
+            // Skip out of bounds
+            if (idxEnd < 0 || idxStart >= totalSamples) continue;
+
+            const safeStart = Math.max(0, idxStart);
+            const safeEnd = Math.min(totalSamples, idxEnd);
+
+            // If the step is huge (zoomed out), we can skip samples to optimize performance
+            // But standard step loop is usually fine for < 4k pixels width
+            // Let's us simple step logic from original code but refined
+
+            // Original code use fixed step based on total visible samples / width
+            // That works well.
             const sampleIndexStart = startSample + (i * step);
 
-            for (let j = 0; j < step; j++) {
+            // Safety measure: if zoomed in super close, step might be 0 or 1
+            const effectiveStep = Math.max(1, step);
+
+            for (let j = 0; j < effectiveStep; j++) {
                 const idx = sampleIndexStart + j;
                 if (idx >= 0 && idx < totalSamples) {
                     const datum = data[idx];
@@ -105,12 +178,8 @@ export const Waveform: React.FC<WaveformProps> = ({
                 }
             }
 
-            // If no data found in this step (e.g. zoomed out too much or edge cases), just draw a line
-            if (min > max) {
-                min = 0; max = 0;
-            }
+            if (min > max) { min = 0; max = 0; }
 
-            // Apply amplitude scaling (volume visualization)
             min *= amplitudeScale;
             max *= amplitudeScale;
 
@@ -119,25 +188,26 @@ export const Waveform: React.FC<WaveformProps> = ({
             ctx.fillRect(i, yMin, 1, Math.max(1, yMax - yMin));
         }
 
-        // Helper to convert time to X position
-        const timeToX = (time: number) => {
-            return ((time - viewStart) / visibleDuration) * displayWidth;
-        };
 
         // Draw Selection Overlay
         if (selection) {
-            // Only draw if selection is visible
             if (selection.end > viewStart && selection.start < viewEnd) {
                 const startX = Math.max(0, timeToX(selection.start));
                 const endX = Math.min(displayWidth, timeToX(selection.end));
                 const widthX = Math.max(1, endX - startX);
 
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.fillStyle = 'rgba(99, 102, 241, 0.2)'; // Indigo-500 optimized opacity
                 ctx.fillRect(startX, 0, widthX, displayHeight);
 
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(startX, 0, widthX, displayHeight);
+
+                // Selection Handles/Lines
+                ctx.beginPath();
+                ctx.moveTo(startX, 0); ctx.lineTo(startX, displayHeight);
+                ctx.moveTo(endX, 0); ctx.lineTo(endX, displayHeight);
+                ctx.stroke();
             }
         }
 
@@ -170,24 +240,54 @@ export const Waveform: React.FC<WaveformProps> = ({
         if (currentTime >= viewStart && currentTime <= viewEnd) {
             const x = timeToX(currentTime);
 
+            // Glow/Blur
+            ctx.shadowColor = '#fbbf24';
+            ctx.shadowBlur = 4;
+
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, displayHeight);
-            ctx.strokeStyle = isPlaying ? '#f59e0b' : '#94a3b8';
+            ctx.strokeStyle = isPlaying ? '#fbbf24' : '#94a3b8'; // Amber-400 : Slate-400
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Draw triangle at top
-            ctx.fillStyle = isPlaying ? '#f59e0b' : '#94a3b8';
+            ctx.shadowBlur = 0; // Reset
+
+            // Head
+            ctx.fillStyle = isPlaying ? '#fbbf24' : '#94a3b8';
             ctx.beginPath();
             ctx.moveTo(x, 0);
-            ctx.lineTo(x - 4, -8);
-            ctx.lineTo(x + 4, -8);
+            ctx.lineTo(x - 5, 0);
+            ctx.lineTo(x, 8);
+            ctx.lineTo(x + 5, 0);
             ctx.closePath();
             ctx.fill();
         }
 
-    }, [buffer, color, height, width, selection, markers, playheadPosition, isPlaying, zoom, viewStart, amplitudeScale]);
+        // Draw Hover Line (Crosshair)
+        if (hoverTime !== null && hoverTime >= viewStart && hoverTime <= viewEnd) {
+            const hx = timeToX(hoverTime);
+
+            ctx.beginPath();
+            ctx.moveTo(hx, 0);
+            ctx.lineTo(hx, displayHeight);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Time label
+            ctx.fillStyle = 'rgba(0,0,0,0.8)';
+            ctx.fillRect(hx + 4, displayHeight - 20, 45, 16);
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px monospace';
+            ctx.fillText(hoverTime.toFixed(2) + 's', hx + 6, displayHeight - 8);
+        }
+    };
+
+    // Draw whenever dependencies change
+    useEffect(() => {
+        drawWaveform();
+    }, [buffer, color, height, width, selection, markers, playheadPosition, isPlaying, zoom, viewStart, amplitudeScale, hoverTime]);
 
     const hasDragged = useRef(false);
 
@@ -208,7 +308,6 @@ export const Waveform: React.FC<WaveformProps> = ({
         dragStartX.current = x;
         hasDragged.current = false;
 
-        // Start/Reset selection on mouse down
         if (buffer && onSelectionChange) {
             const time = xToTime(x, rect.width);
             onSelectionChange(time, time);
@@ -216,15 +315,19 @@ export const Waveform: React.FC<WaveformProps> = ({
     };
 
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (!isDragging.current || !buffer || !onSelectionChange) return;
-
         const rect = e.currentTarget.getBoundingClientRect();
         let x = e.clientX - rect.left;
 
-        // Clamp x to be within the canvas
+        // Update Hover Time
+        if (buffer) {
+            setHoverTime(xToTime(x, rect.width));
+        }
+
+        if (!isDragging.current || !buffer || !onSelectionChange) return;
+
+        // Clamp x
         x = Math.max(0, Math.min(x, rect.width));
 
-        // Consider it a drag if moved more than a few pixels
         if (Math.abs(x - dragStartX.current) > 3) {
             hasDragged.current = true;
         }
@@ -239,7 +342,6 @@ export const Waveform: React.FC<WaveformProps> = ({
     const handleMouseUp = (e: React.MouseEvent) => {
         isDragging.current = false;
 
-        // If it was a click (not a drag) and onSeek is available, trigger seek
         if (!hasDragged.current && onSeek && buffer) {
             const rect = e.currentTarget.getBoundingClientRect();
             const x = e.clientX - rect.left;
@@ -247,17 +349,20 @@ export const Waveform: React.FC<WaveformProps> = ({
             const position = time / buffer.duration;
             onSeek(position);
         }
+
+        // Don't clear hover time on up, keeps it useful
     };
 
     const handleMouseLeave = () => {
         isDragging.current = false;
+        setHoverTime(null);
     };
 
     return (
         <canvas
             ref={canvasRef}
-            className={`w-full h-full cursor-crosshair ${className}`}
-            style={{ height: height, width: width ? width : '100%' }}
+            className={`w-full h-full cursor-crosshair touch-none ${className}`} // touch-none for better gesture handling
+            style={{ height: '100%', width: '100%', display: 'block' }} // Force block to avoid inline canvas weirdness inside flex
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
