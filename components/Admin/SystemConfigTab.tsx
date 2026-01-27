@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BackendService } from '../services/backend';
+import { BackendService } from '../../services/backend';
 
 export const SystemConfigTab: React.FC = () => {
     const [config, setConfig] = useState({
