@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { BackendService } from '../services/backend';
+import { supabase } from '../utils/supabaseClient';
 
 // Define the shape of the site configuration
 export interface SiteConfig {
@@ -57,34 +57,69 @@ const SiteConfigContext = createContext<SiteConfigContextType | undefined>(undef
 
 export const SiteConfigProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [config, setConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
+    const [configId, setConfigId] = useState<number | null>(null);
 
-    // Load from backend on mount
+    // Load from Supabase on mount
     useEffect(() => {
         const loadGlobalConfig = async () => {
-            // Backend fetch disabled for Serverless/Supabase migration
-            // Using localStorage and Defaults only.
-            console.log("Using local configuration (Serverless Mode)");
+            try {
+                // 1. Try Loading from Supabase (Source of Truth)
+                const { data, error } = await supabase
+                    .from('site_config')
+                    .select('id, config')
+                    .limit(1)
+                    .single();
+
+                if (error) {
+                    console.warn("Supabase Config Error (Using Local/Defaults):", error.message);
+                    throw error;
+                }
+
+                if (data) {
+                    console.log("Config loaded from Supabase ID:", data.id);
+                    setConfig(prev => ({ ...prev, ...data.config }));
+                    setConfigId(data.id);
+                    // Update Local Backup
+                    localStorage.setItem('locutando_site_config', JSON.stringify(data.config));
+                }
+            } catch (e) {
+                // 2. Fallback to LocalStorage
+                console.warn("Using offline config fallback.");
+                const savedConfig = localStorage.getItem('locutando_site_config');
+                if (savedConfig) {
+                    try {
+                        const parsed = JSON.parse(savedConfig);
+                        setConfig(prev => ({ ...prev, ...parsed }));
+                    } catch (err) { }
+                }
+            }
         };
 
         loadGlobalConfig();
-
-        // Also load local backup
-        const savedConfig = localStorage.getItem('locutando_site_config');
-        if (savedConfig) {
-            try {
-                const parsed = JSON.parse(savedConfig);
-                setConfig(prev => ({ ...prev, ...parsed }));
-            } catch (e) { }
-        }
     }, []);
 
-    // Save to localStorage whenever config changes
-    const updateConfig = (newConfig: Partial<SiteConfig>) => {
-        setConfig(prev => {
-            const updated = { ...prev, ...newConfig };
-            localStorage.setItem('locutando_site_config', JSON.stringify(updated));
-            return updated;
-        });
+    // Save to Supabase + localStorage whenever config changes
+    const updateConfig = async (newConfig: Partial<SiteConfig>) => {
+        // Calculate State Synchronously
+        const finalConfig = { ...config, ...newConfig };
+
+        // Update Local State & Storage
+        setConfig(finalConfig);
+        localStorage.setItem('locutando_site_config', JSON.stringify(finalConfig));
+
+        // Persist to Supabase
+        if (configId) {
+            try {
+                const { error } = await supabase
+                    .from('site_config')
+                    .update({ config: finalConfig })
+                    .eq('id', configId);
+
+                if (error) console.error("Error saving to DB:", error);
+            } catch (err) {
+                console.error("Failed to persist config remotely", err);
+            }
+        }
     };
 
     const resetConfig = () => {
