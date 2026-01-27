@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality } from '@google/genai';
 import { Voice, TrackInfo } from '../types';
 import { removeSilence } from '../utils/audioProcessing';
+import { useSiteConfig } from '../contexts/SiteConfigContext';
 
 // Helper functions (moved from App.tsx)
 function decode(base64: string): Uint8Array {
@@ -123,14 +124,19 @@ export const useVoiceGenerator = (
         loadDefaultTracks();
     }, [audioContext, backgroundTracks]);
 
+    const { config } = useSiteConfig();
+
     const handleGenerateSpeech = useCallback(async (voiceToUse: Voice, textToUse: string) => {
-        const apiKey = (typeof process !== 'undefined' && (process as any).env && (process as any).env.API_KEY)
-            ? (process as any).env.API_KEY
-            : (typeof window !== 'undefined' && (window as any).__API_KEY__)
-                ? (window as any).__API_KEY__
-                : (typeof window !== 'undefined' && localStorage.getItem('apiKey'))
-                    ? localStorage.getItem('apiKey')!
-                    : undefined;
+        // Priority: Context (Supabase) > LocalStorage > Env
+        let apiKey = config.apiKeys?.googleApiKey;
+
+        if (!apiKey && typeof window !== 'undefined') {
+            apiKey = localStorage.getItem('apiKey') || undefined;
+        }
+
+        if (!apiKey && typeof process !== 'undefined') {
+            apiKey = (process as any).env?.API_KEY;
+        }
 
         if (!apiKey) { setError("Chave de API não encontrada."); return null; }
         if (!audioContext) { setError("Web Audio API não suportada."); return null; }

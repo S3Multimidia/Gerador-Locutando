@@ -5,7 +5,7 @@ import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { SystemConfigTab } from './Admin/SystemConfigTab';
 import { BackendService } from '../services/backend';
 import { supabase } from '../utils/supabaseClient';
-import { saveVoices, saveTracks, deleteVoice } from '../utils/storage';
+import { saveVoices, saveTracks, deleteVoice, resetSystem } from '../utils/storage';
 
 
 interface AdminPanelProps {
@@ -734,8 +734,44 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
                             <button onClick={handleSaveAssistantInstructions} className="mt-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">Salvar Instruções</button>
                             <p className="text-xs text-gray-500 mt-1">Essas instruções serão adicionadas ao prompt do sistema do assistente virtual.</p>
                         </div>
+
+                        {/* DANGER ZONE - SYSTEM RESET */}
+                        <div className="border-t border-red-200 pt-6 mt-6 bg-red-50 p-4 rounded-lg">
+                            <h4 className="text-xl font-bold text-red-700 mb-4 flex items-center">
+                                <span className="mr-2">⚠️</span> Zona de Perigo
+                            </h4>
+                            <p className="text-sm text-red-800 mb-4">
+                                Cuidado: As ações abaixo são irreversíveis.
+                            </p>
+
+                            <div className="flex flex-col space-y-4">
+                                <button
+                                    onClick={async () => {
+                                        if (window.confirm('TEM CERTEZA ABSOLUTA? Isso apagará TODAS as vozes do banco de dados e limpará o cache local. O sistema voltará ao estado vazio.')) {
+                                            if (window.confirm('Confirmação final: Deseja realmente ZERAR o sistema?')) {
+                                                try {
+                                                    await resetSystem();
+                                                    alert('Sistema resetado com sucesso. A página será recarregada.');
+                                                    window.location.reload();
+                                                } catch (e: any) {
+                                                    alert('Erro fatal ao resetar: ' + e.message);
+                                                }
+                                            }
+                                        }
+                                    }}
+                                    className="px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow hover:bg-red-700 border border-red-800 w-full md:w-auto text-left"
+                                >
+                                    💣 FORMATAR SISTEMA (Zerar Vozes e Cache)
+                                </button>
+                                <p className="text-xs text-red-600">
+                                    Use isso se as vozes estiverem duplicadas ou "imortais". Isso limpa Supabase e IndexedDB.
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 );
+            case 'system':
+                return <SystemConfigTab />;
             case 'site':
                 return (
                     <div className="space-y-6">

@@ -143,6 +143,42 @@ export const deleteVoice = async (id: string): Promise<void> => {
         console.error("Error deleting voice:", e);
         throw e;
     }
+}
+
+
+/**
+ * Zera TODO o sistema:
+ * 1. Remove todas as vozes do Supabase
+ * 2. Limpa o Cache Local (IndexedDB)
+ * 3. (Opcional) Limpa configurações locais
+ */
+export const resetSystem = async (): Promise<void> => {
+    try {
+        console.log('RESET: Iniciando limpeza completa...');
+
+        // 1. Limpar Supabase (Tenta deletar tudo que tem ID diferente de '0')
+        const { error } = await supabase.from('voices').delete().neq('id', '0');
+        if (error) {
+            console.error('RESET: Erro ao limpar Supabase:', error);
+            // Pode ser RLS.
+        }
+
+        // 2. Limpar IndexedDB
+        const db = await initDB();
+
+        // Limpar Vozes
+        const txVoices = db.transaction([STORE_VOICES], 'readwrite');
+        txVoices.objectStore(STORE_VOICES).clear();
+
+        // Limpar Trilhas
+        const txTracks = db.transaction([STORE_TRACKS], 'readwrite');
+        txTracks.objectStore(STORE_TRACKS).clear();
+
+        console.log('RESET: Concluído com sucesso.');
+    } catch (e) {
+        console.error('RESET: Falha crítica', e);
+        throw e;
+    }
 };
 
 
