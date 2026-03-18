@@ -385,7 +385,27 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
             onChange={handleTextChange}
             placeholder="Digite ou cole seu roteiro aqui para a mágica acontecer..."
             aria-label="Texto para narrar"
+            disabled={isValidating}
           />
+
+          {/* AI Processing Overlay */}
+          {isValidating && (
+            <div className="absolute inset-0 z-20 bg-slate-900/80 backdrop-blur-md rounded-2xl flex flex-col items-center justify-center animate-fade-in border border-indigo-500/50 shadow-[0_0_30px_rgba(99,102,241,0.3)]">
+               <div className="bg-slate-800 p-8 rounded-2xl flex flex-col items-center justify-center shadow-2xl border border-indigo-500/30">
+                 <div className="relative w-16 h-16 mb-6">
+                    <div className="absolute inset-0 border-4 border-indigo-500/20 rounded-full"></div>
+                    <div className="absolute inset-0 border-4 border-indigo-500 rounded-full border-t-transparent animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-2xl animate-pulse">✨</span>
+                    </div>
+                 </div>
+                 <h3 className="text-xl font-bold text-white mb-2 ml-2">A IA está trabalhando...</h3>
+                 <div className="text-indigo-400 font-medium text-center text-lg ml-2 animate-pulse">
+                   <DynamicLoadingMessage messages={VALIDATION_MESSAGES} />
+                 </div>
+               </div>
+            </div>
+          )}
           <div className="absolute bottom-4 right-4 flex items-center gap-2">
             <span className="text-xs font-mono font-medium text-slate-500 bg-slate-900/80 px-2 py-1 rounded border border-slate-800">
               {text.length} / {MAX_CHARS}
@@ -454,12 +474,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
             </button>
           </div>
 
-          {isValidating && (
-            <div className="mt-4 flex items-center justify-center text-indigo-400 text-sm font-medium">
-              <LoadingSpinner className="w-4 h-4 mr-2" />
-              <DynamicLoadingMessage messages={VALIDATION_MESSAGES} />
-            </div>
-          )}
+
         </div>
       )}
 
