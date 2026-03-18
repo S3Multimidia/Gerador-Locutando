@@ -58,30 +58,17 @@ const App: React.FC = () => {
           getTracks()
         ]);
 
-        // Merge stored voices with INITIAL_VOICES to update static properties (images, descriptions)
+        // Mescla vozes do banco com INITIAL_VOICES apenas para buscar propriedades fixas (como imagens/descrições padrão)
+        // IMPORTANTE: Não readiciona vozes que o usuário excluiu. O que vem do getVoices() é a fonte da verdade.
         const mergedVoices = voices.map(v => {
           const initial = INITIAL_VOICES.find(iv => iv.id === v.id);
           if (initial) {
-            return { ...v, ...initial };
+            return { ...initial, ...v };
           }
           return v;
         });
 
-        // Add any new voices from INITIAL_VOICES that are not in storage
-        const existingIds = new Set(mergedVoices.map(v => v.id));
-        const newVoices = INITIAL_VOICES.filter(iv => !existingIds.has(iv.id));
-
-        // Ensure placeholders exist
-        const allowed = ['achernar', 'achird', 'algenib', 'algieba', 'alnilam', 'aoede', 'autonoe', 'callirrhoe', 'charon', 'despina', 'enceladus', 'erinome', 'fenrir', 'gacrux', 'iapetus', 'kore', 'laomedeia', 'leda', 'orus', 'puck', 'pulcherrima', 'rasalgethi', 'sadachbia', 'sadaltager', 'schedar', 'sulafat', 'umbriel', 'vindemiatrix', 'zephyr', 'zubenelgenubi'];
-        const allCurrentIds = new Set([...existingIds, ...newVoices.map(v => v.id)]);
-
-        const placeholders: Voice[] = allowed
-          .filter(id => !allCurrentIds.has(id))
-          .map(id => ({
-            id, name: id, displayName: id, gender: 'Masculino', language: 'pt-BR', description: '', prompt: '', imageUrl: '', demoUrl: ''
-          }));
-
-        setAvailableVoices([...mergedVoices, ...newVoices, ...placeholders]);
+        setAvailableVoices(mergedVoices);
         setBackgroundTracks(tracks);
       } catch (error) {
         console.error('Failed to load data from storage:', error);
