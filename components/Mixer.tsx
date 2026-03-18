@@ -324,7 +324,8 @@ export const Mixer: React.FC<MixerProps> = ({
                         // Map 0-1 to -60dB to -10dB
                         const dbThreshold = -60 + (threshold * 50);
                         try {
-                            newFinalBuffers[track] = removeSilence(base, dbThreshold, 0.5);
+                            // Reduced from 0.5s to 0.15s to make the cut more aggressive
+                            newFinalBuffers[track] = removeSilence(base, dbThreshold, 0.15);
                         } catch (e) {
                             console.error(`Error removing silence for ${track}:`, e);
                             newFinalBuffers[track] = base;
