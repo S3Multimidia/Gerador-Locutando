@@ -5,6 +5,7 @@ import { PlayIcon, LoadingSpinner, CheckIcon, PauseIcon, WandIcon, PaperclipIcon
 import { GoogleGenAI } from '@google/genai';
 import { DynamicLoadingMessage } from './DynamicLoadingMessage';
 import { VoiceSelectorCarousel } from './VoiceSelectorCarousel';
+import { useSiteConfig } from '../contexts/SiteConfigContext';
 
 const VALIDATION_MESSAGES = [
   "Analisando contexto do roteiro...",
@@ -49,6 +50,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
   isExpertGenerated,
   setIsExpertGenerated
 }) => {
+  const { config } = useSiteConfig();
 
   const [isSuggesting, setIsSuggesting] = useState<boolean>(false);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState<boolean>(false);
@@ -124,7 +126,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
         reader.readAsDataURL(file);
       });
 
-      const apiKey = getApiKey();
+      const apiKey = config?.apiKeys?.googleApiKey || getApiKey();
 
       if (!apiKey) throw new Error("API Key not found");
 
@@ -166,7 +168,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
     if (isLoading || isTurboLoading) return;
     setIsSuggesting(true);
     try {
-      const apiKey = getApiKey();
+      const apiKey = config?.apiKeys?.googleApiKey || getApiKey();
       if (!apiKey) { setIsSuggesting(false); return; }
       const ai = new GoogleGenAI({ apiKey });
       const allowed = availableVoices.map(v => v.id).join(', ');
@@ -192,7 +194,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
   const generateSpecialistScript = async () => {
     setIsValidating(true);
     try {
-      const apiKey = getApiKey();
+      const apiKey = config?.apiKeys?.googleApiKey || getApiKey();
 
       if (!apiKey) {
         setIsValidating(false);
@@ -283,7 +285,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
 
     setIsValidating(true);
     try {
-      const apiKey = getApiKey();
+      const apiKey = config?.apiKeys?.googleApiKey || getApiKey();
 
       if (!apiKey) {
         setIsValidating(false);
