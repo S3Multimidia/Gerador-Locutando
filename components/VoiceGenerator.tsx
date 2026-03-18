@@ -141,11 +141,7 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
         }]
       });
 
-      let extractedText = '';
-      const part = (res as any)?.candidates?.[0]?.content?.parts?.[0];
-      if (part && typeof part.text === 'string') extractedText = part.text;
-      else if (typeof (res as any).text === 'function') extractedText = await (res as any).text();
-      else extractedText = String((res as any).text || '');
+      const extractedText = res.text || '';
 
       if (extractedText) {
         setText(prev => {
@@ -175,12 +171,8 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
       const ai = new GoogleGenAI({ apiKey });
       const allowed = availableVoices.map(v => v.id).join(', ');
       const prompt = `Considere o texto a seguir e indique apenas um id de voz dentre [${allowed}]. Responda estritamente em JSON: {\"voz_sugerida\":\"id\"}. Texto: \n\n${text}`;
-      const res = await ai.models.generateContent({ model: chatModel, contents: [{ parts: [{ text: prompt }] }], config: { responseMimeType: "application/json" } });
-      let raw = '';
-      const part = (res as any)?.candidates?.[0]?.content?.parts?.[0];
-      if (part && typeof part.text === 'string') raw = part.text;
-      else if (typeof (res as any).text === 'function') raw = await (res as any).text();
-      else raw = String((res as any).text || '');
+      const res = await ai.models.generateContent({ model: chatModel, contents: prompt, config: { responseMimeType: "application/json" } });
+      const raw = res.text || '';
       let obj: any;
       try { obj = JSON.parse(raw.trim()); } catch { setIsSuggesting(false); return; }
       const vidRaw = obj?.voz_sugerida ?? '';
@@ -237,13 +229,8 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
       const basePrompt = storedPrompt || defaultPrompt;
       const prompt = `${basePrompt}\n\nInput Usuário: "${text}"\nSeu Output:`;
 
-      const res = await ai.models.generateContent({ model: chatModel, contents: [{ parts: [{ text: prompt }] }] });
-
-      let resultText = '';
-      const part = (res as any)?.candidates?.[0]?.content?.parts?.[0];
-      if (part && typeof part.text === 'string') resultText = part.text;
-      else if (typeof (res as any).text === 'function') resultText = await (res as any).text();
-      else resultText = String((res as any).text || '');
+      const res = await ai.models.generateContent({ model: chatModel, contents: prompt });
+      const resultText = res.text;
 
       if (resultText) {
         setPendingScript(resultText.trim());
@@ -303,13 +290,8 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
         prompt = `Corrija a ortografia, a pontuação e a capitalização (transforme texto em CAIXA ALTA para escrita normal, apenas com iniciais maiúsculas quando necessário) do seguinte texto. NÃO altere palavras, estilo ou tom. Responda APENAS com o texto corrigido. Texto: \n\n${text}`;
       }
 
-      const res = await ai.models.generateContent({ model: chatModel, contents: [{ parts: [{ text: prompt }] }] });
-
-      let resultText = '';
-      const part = (res as any)?.candidates?.[0]?.content?.parts?.[0];
-      if (part && typeof part.text === 'string') resultText = part.text;
-      else if (typeof (res as any).text === 'function') resultText = await (res as any).text();
-      else resultText = String((res as any).text || '');
+      const res = await ai.models.generateContent({ model: chatModel, contents: prompt });
+      const resultText = res.text;
 
       if (resultText) {
         setText(resultText.trim());
