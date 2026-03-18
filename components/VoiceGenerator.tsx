@@ -57,6 +57,10 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [showCustomPromptInput, setShowCustomPromptInput] = useState(false);
+  const [reviewSource, setReviewSource] = useState<'specialist' | 'custom' | null>(null);
+
   // Correction State
   const [isCorrecting, setIsCorrecting] = useState<boolean>(false);
   const [correctedText, setCorrectedText] = useState<string | null>(null);
@@ -240,6 +244,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
 
       if (resultText) {
         setPendingScript(resultText.trim());
+        setReviewSource('specialist');
         setShowScriptReview(true);
       }
     } catch (e: any) {
@@ -250,7 +255,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
     }
   };
 
-  const handleValidationOption = async (option: 'A' | 'B' | 'C' | 'D') => {
+  const handleValidationOption = async (option: 'A' | 'B' | 'C' | 'D' | 'E') => {
     if (option === 'A') {
       setValidationStatus('validated');
       setIsExpertGenerated(true);
@@ -298,15 +303,23 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
 
       if (option === 'B') {
         prompt = `Corrija a ortografia, a pontuação e a capitalização (transforme texto em CAIXA ALTA para escrita normal, apenas com iniciais maiúsculas quando necessário) do seguinte texto. NÃO altere palavras, estilo ou tom. Responda APENAS com o texto corrigido. Texto: \n\n${text}`;
+      } else if (option === 'E') {
+        prompt = `Aqui está uma instrução específica do usuário: "${customPrompt}"\n\nAplique estritamente esta instrução ao texto abaixo. Devolva apenas o roteiro resultante do que eu pedir e com as devidas pontuações para que a IA de voz reproduza com perfeição, sem aspas, sem asteriscos para formatar e sem comentários adicionais.\n\nTexto Original:\n"${text}"`;
       }
 
       const res = await ai.models.generateContent({ model: chatModel, contents: prompt });
       const resultText = res.text;
 
       if (resultText) {
-        setText(resultText.trim());
-        setValidationStatus('validated');
-        setIsExpertGenerated(true);
+        if (option === 'E') {
+          setPendingScript(resultText.trim());
+          setReviewSource('custom');
+          setShowScriptReview(true);
+        } else {
+          setText(resultText.trim());
+          setValidationStatus('validated');
+          setIsExpertGenerated(true);
+        }
       }
     } catch (e: any) {
       console.error("Validation Error:", e);
@@ -327,7 +340,11 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
   };
 
   const handleRegenerateScript = () => {
-    generateSpecialistScript();
+    if (reviewSource === 'custom') {
+      handleValidationOption('E');
+    } else {
+      generateSpecialistScript();
+    }
   };
 
   const anyLoading = isLoading || isTurboLoading || isValidating;
@@ -471,6 +488,43 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
             >
               <div className="font-bold text-red-300 mb-1 group-hover:text-red-200 transition-colors">D. 💥 ESTILO VAREJO (IMPACTO)</div>
               <p className="text-xs text-red-400/80">Converter para CAIXA ALTA, adicionar ênfase em preços e urgência!</p>
+            </button>
+
+            <button
+              onClick={() => {
+                setShowCustomPromptInput(!showCustomPromptInput);
+              }}
+              disabled={isValidating}
+              className="p-4 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 rounded-xl text-left transition-all group md:col-span-2"
+            >
+              <div className="font-bold text-purple-300 mb-1 group-hover:text-purple-200 transition-colors">E. 💬 Orientação Específica (Prompt)</div>
+              <p className="text-xs text-purple-400/80">Diga exatamente o que a IA deve fazer com o texto.</p>
+              
+              {showCustomPromptInput && (
+                <div 
+                  className="mt-4 animate-fade-in" 
+                  onClick={e => e.stopPropagation()}
+                >
+                  <textarea
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="Ex: Reescreva com sotaque caipira, ou ex: Deixe mais romântico..."
+                    className="w-full bg-slate-900 border border-purple-500/50 rounded-lg p-3 text-sm text-slate-200 focus:outline-none focus:border-purple-400 resize-none h-20 mb-3"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (customPrompt.trim()) handleValidationOption('E');
+                      }}
+                      disabled={!customPrompt.trim() || isValidating}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg text-sm transition-colors disabled:opacity-50"
+                    >
+                      Processar Solicitação
+                    </button>
+                  </div>
+                </div>
+              )}
             </button>
           </div>
 
