@@ -194,7 +194,11 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
     try {
       const apiKey = getApiKey();
 
-      if (!apiKey) { setIsValidating(false); return; }
+      if (!apiKey) {
+        setIsValidating(false);
+        alert("Chave da API do Google (Gemini) não configurada! Acesse o Painel de Controle (Configurações) para adicioná-la.");
+        return;
+      }
 
       const ai = new GoogleGenAI({ apiKey });
 
@@ -236,9 +240,9 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
         setPendingScript(resultText.trim());
         setShowScriptReview(true);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Validation Error:", e);
-      alert("Erro ao processar o texto. Tente novamente.");
+      alert(`Erro da API: ${e.message || "Tente novamente."}`);
     } finally {
       setIsValidating(false);
     }
@@ -281,7 +285,11 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
     try {
       const apiKey = getApiKey();
 
-      if (!apiKey) { setIsValidating(false); return; }
+      if (!apiKey) {
+        setIsValidating(false);
+        alert("Chave da API do Google (Gemini) não configurada! Acesse o Painel de Controle (Configurações) para adicioná-la.");
+        return;
+      }
 
       const ai = new GoogleGenAI({ apiKey });
       let prompt = '';
@@ -298,9 +306,9 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
         setValidationStatus('validated');
         setIsExpertGenerated(true);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Validation Error:", e);
-      alert("Erro ao processar o texto. Tente novamente.");
+      alert(`Erro da API: ${e.message || "Tente novamente."}`);
     } finally {
       setIsValidating(false);
     }
