@@ -61,10 +61,17 @@ export const OrderList: React.FC = () => {
 
     const handleDownload = (filename: string) => {
         const url = `${BackendService.API_URL}/api/storefront/download/${filename}/`;
+
+        // Ensure filename has extension for the download attribute
+        let downloadName = filename;
+        if (!downloadName.toLowerCase().endsWith('.mp3')) {
+            downloadName += '.mp3';
+        }
+
         // Trigger download
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', filename);
+        link.setAttribute('download', downloadName);
         document.body.appendChild(link);
         link.click();
         link.remove();
