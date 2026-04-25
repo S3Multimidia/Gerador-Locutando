@@ -1,35 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSunoGenerator } from '../hooks/useSunoGenerator';
 
-interface MusicGeneratorProps {
-    onGenerate?: (data: { title: string; style: string; lyrics: string; isInstrumental: boolean; version: string; isCustom: boolean }) => void;
-    isLoading?: boolean;
-}
-
-export const MusicGenerator: React.FC<MusicGeneratorProps> = ({ onGenerate, isLoading = false }) => {
+export const MusicGenerator: React.FC = () => {
     const [isCustomMode, setIsCustomMode] = useState(true);
-    const [version, setVersion] = useState('V3.5');
+    const [version, setVersion] = useState('V4_5ALL');
     const [title, setTitle] = useState('');
     const [style, setStyle] = useState('');
     const [isInstrumental, setIsInstrumental] = useState(false);
     const [lyrics, setLyrics] = useState('');
 
+    const { generate, isLoading, error, statusText, generatedTracks, clearPolling } = useSunoGenerator();
+
+    useEffect(() => {
+        return () => clearPolling();
+    }, [clearPolling]);
+
     const handleGenerate = () => {
-        if (onGenerate) {
-            onGenerate({ title, style, lyrics, isInstrumental, version, isCustom: isCustomMode });
-        } else {
-            alert('A geração de música será conectada à API em breve! Configure sua API Key no painel Admin.');
+        if (!isInstrumental && isCustomMode && !lyrics) {
+            alert('Por favor, preencha a letra ou ative o modo instrumental.');
+            return;
         }
+        if (isCustomMode && !style && !title) {
+            alert('Por favor, preencha o Título e o Estilo de Música.');
+            return;
+        }
+        if (!isCustomMode && !lyrics) {
+            alert('Por favor, preencha o prompt na área de letras.');
+            return;
+        }
+
+        generate({ title, style, lyrics, isInstrumental, version, isCustom: isCustomMode });
     };
 
     return (
         <div className="bg-[#111113] p-6 rounded-2xl border border-slate-800/50 max-w-2xl mx-auto text-slate-200 font-sans">
             
-            {/* Top Tabs (Mocked visual only for context if needed, but we focus on the form) */}
+            {/* Top Tabs */}
             <div className="flex bg-[#1a1a1d] rounded-full p-1 mb-6">
                 <button className="flex-1 bg-[#8b5cf6] text-white py-2 rounded-full font-medium text-sm transition-all shadow-lg">
                     Geração de Música
                 </button>
-                <button className="flex-1 text-slate-400 py-2 rounded-full font-medium text-sm hover:text-slate-200 transition-all">
+                <button className="flex-1 text-slate-400 py-2 rounded-full font-medium text-sm hover:text-slate-200 transition-all cursor-not-allowed" title="Em breve">
                     Geração de Efeitos Sonoros
                 </button>
             </div>
@@ -48,8 +59,10 @@ export const MusicGenerator: React.FC<MusicGeneratorProps> = ({ onGenerate, isLo
                     onChange={(e) => setVersion(e.target.value)}
                     className="bg-transparent border-none text-sm text-slate-300 focus:ring-0 cursor-pointer outline-none"
                 >
+                    <option value="V4_5ALL">V4.5 ALL</option>
+                    <option value="V4_5PLUS">V4.5 PLUS</option>
+                    <option value="V5">V5</option>
                     <option value="V4">V4</option>
-                    <option value="V3.5">V3.5</option>
                 </select>
             </div>
 
@@ -91,18 +104,47 @@ export const MusicGenerator: React.FC<MusicGeneratorProps> = ({ onGenerate, isLo
                 <span className="text-sm font-medium text-slate-300">Instrumental</span>
             </div>
 
-            {/* Lyrics */}
+            {/* Lyrics / Prompt */}
             {!isInstrumental && (
                 <div className="mb-6 bg-[#1a1a1d] p-4 rounded-xl border border-slate-800/50">
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Letras</label>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">{isCustomMode ? 'Letras' : 'Ideia da Música (Prompt)'}</label>
                     <textarea
                         className="w-full bg-transparent border-none p-0 text-white focus:ring-0 focus:outline-none placeholder-slate-600 text-sm resize-none h-32"
-                        placeholder="Escreva sua própria letra, dois versos (8 linhas) para melhores resultados."
+                        placeholder={isCustomMode ? "Escreva sua própria letra, dois versos (8 linhas) para melhores resultados." : "Ex: Uma música calma de piano relaxante"}
                         value={lyrics}
-                        maxLength={3000}
+                        maxLength={isCustomMode ? 3000 : 500}
                         onChange={(e) => setLyrics(e.target.value)}
                     />
-                    <div className="text-right text-xs text-slate-500 mt-1">{lyrics.length}/3000</div>
+                    <div className="text-right text-xs text-slate-500 mt-1">{lyrics.length}/{isCustomMode ? 3000 : 500}</div>
+                </div>
+            )}
+
+            {/* Status and Errors */}
+            {statusText && (
+                <div className="mb-4 text-center text-sm text-[#8b5cf6] animate-pulse font-medium">
+                    {statusText}
+                </div>
+            )}
+            {error && (
+                <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-400 text-sm text-center">
+                    {error}
+                </div>
+            )}
+
+            {/* Audio Results */}
+            {generatedTracks && generatedTracks.length > 0 && (
+                <div className="mb-6 space-y-4">
+                    <h4 className="text-sm font-bold text-slate-300 border-b border-slate-700 pb-2">Resultados:</h4>
+                    {generatedTracks.map((track) => (
+                        <div key={track.id} className="bg-[#1a1a1d] p-4 rounded-xl border border-slate-800 flex flex-col sm:flex-row gap-4 items-center">
+                            <img src={track.imageUrl || '/default-album.png'} alt="Capa" className="w-16 h-16 rounded-lg object-cover" />
+                            <div className="flex-1">
+                                <h5 className="font-bold text-white text-sm">{track.title || 'Música Gerada'}</h5>
+                                <p className="text-xs text-slate-400 mt-1">{track.tags}</p>
+                                <audio controls src={track.audioUrl} className="w-full mt-2 h-8" />
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
 
