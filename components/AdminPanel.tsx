@@ -5,7 +5,7 @@ import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { SystemConfigTab } from './Admin/SystemConfigTab';
 import { BackendService } from '../services/backend';
 import { supabase } from '../utils/supabaseClient';
-import { saveVoices, saveTracks, deleteVoice, resetSystem } from '../utils/storage';
+import { saveVoices, saveTracks, deleteVoice, deleteTrack, resetSystem } from '../utils/storage';
 
 
 interface AdminPanelProps {
@@ -323,9 +323,13 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
 
     const handleRemoveTrack = async (trackName: string) => {
         if (window.confirm('Tem certeza que deseja remover esta trilha?')) {
-            const updatedTracks = tracks.filter(t => t.name !== trackName);
-            setTracks(updatedTracks);
-            await saveTracks(updatedTracks); // Persist
+            try {
+                await deleteTrack(trackName); // Remove from Supabase and IndexedDB
+                const updatedTracks = tracks.filter(t => t.name !== trackName);
+                setTracks(updatedTracks);
+            } catch (e: any) {
+                alert('Erro ao excluir do banco de dados: ' + e.message);
+            }
         }
     };
 

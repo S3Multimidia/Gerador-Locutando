@@ -195,36 +195,79 @@ const saveVoicesToCache = async (voices: Voice[]) => {
 };
 
 export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction([STORE_TRACKS], 'readwrite');
-        const store = transaction.objectStore(STORE_TRACKS);
+    try {
+        // Save to Supabase (Source of Truth)
+        if (tracks.length > 0) {
+            const { error } = await supabase
+                .from('tracks')
+                .upsert(tracks.map(t => ({
+                    name: t.name,
+                    url: t.url
+                })), { onConflict: 'name' });
 
-        const clearRequest = store.clear();
-
-        clearRequest.onsuccess = () => {
-            let completed = 0;
-            if (tracks.length === 0) {
-                resolve();
-                return;
+            if (error) {
+                console.error("Supabase Save Error:", error);
             }
+        }
 
-            tracks.forEach(track => {
-                const request = store.put(track);
-                request.onsuccess = () => {
-                    completed++;
-                    if (completed === tracks.length) resolve();
-                };
-                request.onerror = () => reject('Erro ao salvar trilha.');
-            });
-        };
+        // Also update IndexedDB for offline capability/cache
+        const db = await initDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_TRACKS], 'readwrite');
+            const store = transaction.objectStore(STORE_TRACKS);
 
-        clearRequest.onerror = () => reject('Erro ao limpar trilhas antigas.');
-    });
+            const clearRequest = store.clear();
+
+            clearRequest.onsuccess = () => {
+                let completed = 0;
+                if (tracks.length === 0) {
+                    resolve();
+                    return;
+                }
+
+                tracks.forEach(track => {
+                    const request = store.put(track);
+                    request.onsuccess = () => {
+                        completed++;
+                        if (completed === tracks.length) resolve();
+                    };
+                    request.onerror = () => reject('Erro ao salvar trilha no cache.');
+                });
+            };
+
+            clearRequest.onerror = () => reject('Erro ao limpar trilhas antigas do cache.');
+        });
+    } catch (e) {
+        console.error('Error saving tracks:', e);
+        throw e;
+    }
 };
 
 export const getTracks = async (): Promise<TrackInfo[]> => {
-    // 1. Backend sync removed. Try IndexedDB First.
+    // 1. Try Supabase First (Cloud Source)
+    try {
+        const { data, error } = await supabase.from('tracks').select('*');
+
+        if (!error && data && data.length > 0) {
+            // Map Supabase Columns to Frontend Type
+            const supabaseTracks: TrackInfo[] = data.map((row: any) => ({
+                name: row.name,
+                url: row.url
+            }));
+
+            // Update local cache
+            saveTracksToCache(supabaseTracks);
+            return supabaseTracks;
+        } else if (data && data.length === 0 && !error) {
+            // Empty list from DB
+            saveTracksToCache([]);
+            return [];
+        }
+    } catch (e) {
+        console.warn('Supabase tracks unreachable, trying cache/defaults...', e);
+    }
+
+    // 2. Try IndexedDB Fallback
     try {
         const db = await initDB();
         const cachedTracks = await new Promise<TrackInfo[]>((resolve, reject) => {
@@ -238,8 +281,24 @@ export const getTracks = async (): Promise<TrackInfo[]> => {
         if (cachedTracks && cachedTracks.length > 0) return cachedTracks;
     } catch (e) { /* ignore */ }
 
-    // 2. Fallback
+    // 3. Fallback to Constants
     return INITIAL_BACKGROUND_TRACKS;
+};
+
+export const deleteTrack = async (name: string): Promise<void> => {
+    try {
+        const { error } = await supabase.from('tracks').delete().eq('name', name);
+        if (error) throw error;
+
+        // Update local cache too
+        const db = await initDB();
+        const transaction = db.transaction([STORE_TRACKS], 'readwrite');
+        const store = transaction.objectStore(STORE_TRACKS);
+        store.delete(name);
+    } catch (e) {
+        console.error("Error deleting track:", e);
+        throw e;
+    }
 };
 
 const saveTracksToCache = async (tracks: TrackInfo[]) => {
