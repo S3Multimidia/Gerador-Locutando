@@ -33,7 +33,7 @@ const App: React.FC = () => {
 
   // Global State
   const [availableVoices, setAvailableVoices] = useState<Voice[]>(INITIAL_VOICES);
-  const [backgroundTracks, setBackgroundTracks] = useState<TrackInfo[]>(INITIAL_BACKGROUND_TRACKS);
+  const [backgroundTracks, setBackgroundTracks] = useState<TrackInfo[]>([]);
   const [isLoadingStorage, setIsLoadingStorage] = useState(true);
 
   // Force default to the user requested TTS model
@@ -86,11 +86,8 @@ const App: React.FC = () => {
     }
   }, [availableVoices, isLoadingStorage]);
 
-  useEffect(() => {
-    if (!isLoadingStorage) {
-      saveTracks(backgroundTracks);
-    }
-  }, [backgroundTracks, isLoadingStorage]);
+  // Note: saveTracks is called explicitly from AdminPanel when the user adds/removes tracks.
+  // We don't auto-save here to avoid accidentally persisting the default/initial tracks.
 
   // Navigation Handler
   const handleNavigate = (newPage: Page) => {

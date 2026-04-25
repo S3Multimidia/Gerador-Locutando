@@ -246,54 +246,32 @@ export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
 };
 
 export const getTracks = async (): Promise<TrackInfo[]> => {
-    // 1. Try Supabase First (Cloud Source of Truth)
+    // Supabase is the ONLY source of truth.
+    // Returns only what the user has uploaded. No defaults, no fallbacks.
     try {
-        const { data, error } = await supabase.from('tracks').select('*');
+        const { data, error } = await supabase.from('tracks').select('name, url');
 
-        if (!error && data) {
-            if (data.length > 0) {
-                // Map Supabase Columns to Frontend Type
-                const supabaseTracks: TrackInfo[] = data.map((row: any) => ({
-                    name: row.name,
-                    url: row.url
-                }));
-                saveTracksToCache(supabaseTracks);
-                return supabaseTracks;
-            } else {
-                // Supabase is EMPTY → auto-seed with initial tracks
-                console.log('Supabase tracks table is empty. Seeding with initial tracks...');
-                await supabase.from('tracks').upsert(
-                    INITIAL_BACKGROUND_TRACKS.map(t => ({
-                        name: t.name,
-                        url: t.url,
-                        category: 'background'
-                    })),
-                    { onConflict: 'name' }
-                );
-                saveTracksToCache(INITIAL_BACKGROUND_TRACKS);
-                return INITIAL_BACKGROUND_TRACKS;
-            }
+        if (error) {
+            console.error('Supabase getTracks error:', error.message);
+            return [];
         }
+
+        if (data && data.length > 0) {
+            const supabaseTracks: TrackInfo[] = data.map((row: any) => ({
+                name: row.name,
+                url: row.url
+            }));
+            saveTracksToCache(supabaseTracks);
+            return supabaseTracks;
+        }
+
+        // Empty table = user has not uploaded anything yet
+        saveTracksToCache([]);
+        return [];
     } catch (e) {
-        console.warn('Supabase tracks unreachable, trying cache/defaults...', e);
+        console.warn('Supabase unreachable, returning empty list.', e);
+        return [];
     }
-
-    // 2. Try IndexedDB Fallback
-    try {
-        const db = await initDB();
-        const cachedTracks = await new Promise<TrackInfo[]>((resolve, reject) => {
-            const transaction = db.transaction([STORE_TRACKS], 'readonly');
-            const store = transaction.objectStore(STORE_TRACKS);
-            const request = store.getAll();
-            request.onsuccess = () => resolve(request.result as TrackInfo[]);
-            request.onerror = () => reject('IDB Error');
-        });
-
-        if (cachedTracks && cachedTracks.length > 0) return cachedTracks;
-    } catch (e) { /* ignore */ }
-
-    // 3. Fallback to Constants
-    return INITIAL_BACKGROUND_TRACKS;
 };
 
 export const deleteTrack = async (name: string): Promise<void> => {
