@@ -202,11 +202,13 @@ export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
                 .from('tracks')
                 .upsert(tracks.map(t => ({
                     name: t.name,
-                    url: t.url
+                    url: t.url,
+                    category: 'background'
                 })), { onConflict: 'name' });
 
             if (error) {
                 console.error("Supabase Save Error:", error);
+                throw new Error('Erro ao salvar trilhas no Supabase: ' + error.message);
             }
         }
 
@@ -244,24 +246,33 @@ export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
 };
 
 export const getTracks = async (): Promise<TrackInfo[]> => {
-    // 1. Try Supabase First (Cloud Source)
+    // 1. Try Supabase First (Cloud Source of Truth)
     try {
         const { data, error } = await supabase.from('tracks').select('*');
 
-        if (!error && data && data.length > 0) {
-            // Map Supabase Columns to Frontend Type
-            const supabaseTracks: TrackInfo[] = data.map((row: any) => ({
-                name: row.name,
-                url: row.url
-            }));
-
-            // Update local cache
-            saveTracksToCache(supabaseTracks);
-            return supabaseTracks;
-        } else if (data && data.length === 0 && !error) {
-            // Empty list from DB - return initial tracks instead of empty array
-            saveTracksToCache(INITIAL_BACKGROUND_TRACKS);
-            return INITIAL_BACKGROUND_TRACKS;
+        if (!error && data) {
+            if (data.length > 0) {
+                // Map Supabase Columns to Frontend Type
+                const supabaseTracks: TrackInfo[] = data.map((row: any) => ({
+                    name: row.name,
+                    url: row.url
+                }));
+                saveTracksToCache(supabaseTracks);
+                return supabaseTracks;
+            } else {
+                // Supabase is EMPTY → auto-seed with initial tracks
+                console.log('Supabase tracks table is empty. Seeding with initial tracks...');
+                await supabase.from('tracks').upsert(
+                    INITIAL_BACKGROUND_TRACKS.map(t => ({
+                        name: t.name,
+                        url: t.url,
+                        category: 'background'
+                    })),
+                    { onConflict: 'name' }
+                );
+                saveTracksToCache(INITIAL_BACKGROUND_TRACKS);
+                return INITIAL_BACKGROUND_TRACKS;
+            }
         }
     } catch (e) {
         console.warn('Supabase tracks unreachable, trying cache/defaults...', e);
