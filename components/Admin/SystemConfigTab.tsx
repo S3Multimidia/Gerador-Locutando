@@ -1,29 +1,61 @@
 import React, { useState, useEffect } from 'react';
-import { BackendService } from '../../services/backend';
+import { supabase } from '../../utils/supabaseClient';
 
 export const SystemConfigTab: React.FC = () => {
     const [config, setConfig] = useState({
+        suno_api_key: '',
         evolution_api_url: '',
         evolution_api_token: '',
         mercado_pago_token: ''
     });
-    const [qrCode, setQrCode] = useState<string | null>(null);
     const [connectionStatus, setConnectionStatus] = useState<string>('Verificando...');
     const [isLoading, setIsLoading] = useState(false);
     const [feedback, setFeedback] = useState('');
 
     useEffect(() => {
-        // Load initial config
-        BackendService.getSystemConfig().then(data => setConfig(data)).catch(console.error);
+        const loadConfig = async () => {
+            try {
+                const { data, error } = await supabase.from('system_config').select('*');
+                if (error && error.code !== '42P01') { // Ignore table not found error initially
+                    console.error('Error loading config:', error);
+                    return;
+                }
+                
+                if (data) {
+                    const newConfig = { ...config };
+                    data.forEach((row: any) => {
+                        if (row.key in newConfig) {
+                            (newConfig as any)[row.key] = row.value;
+                        }
+                    });
+                    setConfig(newConfig);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        };
+        loadConfig();
     }, []);
 
     const handleSave = async () => {
         try {
             setIsLoading(true);
-            await BackendService.updateSystemConfig(config);
+            setFeedback('');
+            
+            // Format for Supabase upsert
+            const updates = Object.entries(config).map(([key, value]) => ({
+                key,
+                value
+            }));
+
+            const { error } = await supabase.from('system_config').upsert(updates, { onConflict: 'key' });
+            
+            if (error) throw error;
+            
             setFeedback('Configuração salva com sucesso!');
-        } catch (e) {
-            setFeedback('Erro ao salvar configuração.');
+        } catch (e: any) {
+            console.error(e);
+            setFeedback('Erro ao salvar: ' + e.message);
         } finally {
             setIsLoading(false);
         }
@@ -53,7 +85,25 @@ export const SystemConfigTab: React.FC = () => {
 
     return (
         <div className="space-y-6 bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-bold text-gray-800">Integrações do Sistema (Backend Core)</h2>
+            <h2 className="text-xl font-bold text-gray-800">Integrações do Sistema (Global)</h2>
+
+            {/* AI Settings */}
+            <div className="border-b pb-6">
+                <h3 className="text-lg font-semibold text-gray-700 mb-4">Configurações de IA</h3>
+                <div className="grid grid-cols-1 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Suno API Key (Geração de Música)</label>
+                        <input
+                            type="password"
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
+                            value={config.suno_api_key}
+                            onChange={e => setConfig({ ...config, suno_api_key: e.target.value })}
+                            placeholder="Sua chave de API do Suno..."
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Essa chave será usada globalmente para gerar músicas na aba "Gerar Música".</p>
+                    </div>
+                </div>
+            </div>
 
             {/* Evolution API */}
             <div className="border-b pb-6">
@@ -86,13 +136,7 @@ export const SystemConfigTab: React.FC = () => {
                         >
                             {isLoading ? 'Conectando...' : 'Gerar QR Code'}
                         </button>
-                        <span className="text-sm text-gray-600">Status: {connectionStatus}</span>
                     </div>
-                    {qrCode && (
-                        <div className="mt-4 p-4 border rounded bg-gray-50 flex justify-center">
-                            <div dangerouslySetInnerHTML={{ __html: qrCode }} />
-                        </div>
-                    )}
                 </div>
             </div>
 

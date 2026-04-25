@@ -13,6 +13,7 @@ import { BackendService } from '../services/backend';
 import { DepositModal } from '../components/Wallet/DepositModal';
 import { StorefrontGenerator } from '../components/StorefrontGenerator';
 import { OrderList } from '../components/OrderList';
+import { MusicGenerator } from '../components/MusicGenerator';
 
 interface DashboardPageProps {
     availableVoices: Voice[];
@@ -27,7 +28,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
     const [selectedVoice, setSelectedVoice] = useState<Voice | null>(null);
     const [finalMixedBlob, setFinalMixedBlob] = useState<Blob | null>(null);
 
-    const [activeTab, setActiveTab] = useState<'generate' | 'record' | 'storefront' | 'orders'>('generate');
+    const [activeTab, setActiveTab] = useState<'generate' | 'music' | 'record' | 'storefront' | 'orders'>('generate');
     const [showDepositModal, setShowDepositModal] = useState(false);
     const [walletBalance, setWalletBalance] = useState<number>(0);
 
@@ -230,6 +231,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                             IA Generator
                         </button>
                         <button
+                            onClick={() => setActiveTab('music')}
+                            className={`flex-1 min-w-[100px] px-3 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'music' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                        >
+                            Gerar Música
+                        </button>
+                        <button
                             onClick={() => setActiveTab('record')}
                             className={`flex-1 min-w-[100px] px-3 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'record' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                         >
@@ -267,6 +274,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ availableVoices, b
                                 chatModel={chatModel}
                                 onGoToChat={() => { }} // No longer used
                             />
+                        )}
+                        {activeTab === 'music' && (
+                            <MusicGenerator />
                         )}
                         {activeTab === 'record' && audioContext && (
                             <AudioRecorder
