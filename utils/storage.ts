@@ -259,9 +259,9 @@ export const getTracks = async (): Promise<TrackInfo[]> => {
             saveTracksToCache(supabaseTracks);
             return supabaseTracks;
         } else if (data && data.length === 0 && !error) {
-            // Empty list from DB
-            saveTracksToCache([]);
-            return [];
+            // Empty list from DB - return initial tracks instead of empty array
+            saveTracksToCache(INITIAL_BACKGROUND_TRACKS);
+            return INITIAL_BACKGROUND_TRACKS;
         }
     } catch (e) {
         console.warn('Supabase tracks unreachable, trying cache/defaults...', e);
