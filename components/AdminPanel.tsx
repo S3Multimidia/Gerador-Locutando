@@ -5,7 +5,7 @@ import { useSiteConfig } from '../contexts/SiteConfigContext';
 import { SystemConfigTab } from './Admin/SystemConfigTab';
 import { BackendService } from '../services/backend';
 import { supabase } from '../utils/supabaseClient';
-import { saveVoices, saveTracks, deleteVoice, deleteTrack, resetSystem } from '../utils/storage';
+import { saveVoices, saveTracks, addTrack, deleteVoice, deleteTrack, resetSystem } from '../utils/storage';
 
 
 interface AdminPanelProps {
@@ -314,11 +314,26 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
 
     const handleAddTrack = async (e: React.FormEvent) => {
         e.preventDefault();
-        const updatedTracks = [...tracks, newTrack];
-        setTracks(updatedTracks);
-        await saveTracks(updatedTracks); // Persist
-        setNewTrack({ name: '', url: '' });
-        setShowAddTrackForm(false);
+
+        if (!newTrack.url) {
+            alert('Aguarde o upload do arquivo terminar antes de salvar.');
+            return;
+        }
+
+        // Check for duplicate name
+        if (tracks.some(t => t.name === newTrack.name)) {
+            alert(`Já existe uma trilha com o nome "${newTrack.name}". Renomeie o arquivo ou altere o nome antes de salvar.`);
+            return;
+        }
+
+        try {
+            await addTrack(newTrack); // Insert ONLY this track to Supabase
+            setTracks(prev => [...prev, newTrack]); // Update UI
+            setNewTrack({ name: '', url: '' });
+            setShowAddTrackForm(false);
+        } catch (e: any) {
+            alert('Erro ao salvar trilha: ' + e.message);
+        }
     };
 
     const handleRemoveTrack = async (trackName: string) => {

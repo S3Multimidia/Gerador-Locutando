@@ -194,56 +194,28 @@ const saveVoicesToCache = async (voices: Voice[]) => {
     } catch (e) { console.error('Cache error', e); }
 };
 
-export const saveTracks = async (tracks: TrackInfo[]): Promise<void> => {
-    try {
-        // Save to Supabase (Source of Truth)
-        if (tracks.length > 0) {
-            const { error } = await supabase
-                .from('tracks')
-                .upsert(tracks.map(t => ({
-                    name: t.name,
-                    url: t.url,
-                    category: 'background'
-                })), { onConflict: 'name' });
-
-            if (error) {
-                console.error("Supabase Save Error:", error);
-                throw new Error('Erro ao salvar trilhas no Supabase: ' + error.message);
-            }
-        }
-
-        // Also update IndexedDB for offline capability/cache
-        const db = await initDB();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction([STORE_TRACKS], 'readwrite');
-            const store = transaction.objectStore(STORE_TRACKS);
-
-            const clearRequest = store.clear();
-
-            clearRequest.onsuccess = () => {
-                let completed = 0;
-                if (tracks.length === 0) {
-                    resolve();
-                    return;
-                }
-
-                tracks.forEach(track => {
-                    const request = store.put(track);
-                    request.onsuccess = () => {
-                        completed++;
-                        if (completed === tracks.length) resolve();
-                    };
-                    request.onerror = () => reject('Erro ao salvar trilha no cache.');
-                });
-            };
-
-            clearRequest.onerror = () => reject('Erro ao limpar trilhas antigas do cache.');
+// Add a single track to Supabase (reliable, no conflicts with list management)
+export const addTrack = async (track: TrackInfo): Promise<void> => {
+    const { error } = await supabase
+        .from('tracks')
+        .insert({
+            name: track.name,
+            url: track.url,
+            category: 'background'
         });
-    } catch (e) {
-        console.error('Error saving tracks:', e);
-        throw e;
+
+    if (error) {
+        console.error('Supabase addTrack error:', error);
+        throw new Error('Erro ao salvar trilha: ' + error.message);
     }
 };
+
+// Keep saveTracks for legacy compatibility (not used for add/remove flow anymore)
+export const saveTracks = async (_tracks: TrackInfo[]): Promise<void> => {
+    // No-op: tracks are now managed individually via addTrack / deleteTrack
+};
+
+
 
 export const getTracks = async (): Promise<TrackInfo[]> => {
     // Supabase is the ONLY source of truth.
