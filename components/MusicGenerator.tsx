@@ -134,7 +134,7 @@ export const MusicGenerator: React.FC = () => {
             {/* Audio Results */}
             {generatedTracks && generatedTracks.length > 0 && (
                 <div className="mb-6 space-y-4">
-                    <h4 className="text-sm font-bold text-slate-300 border-b border-slate-700 pb-2">Resultados:</h4>
+                    <h4 className="text-sm font-bold text-slate-300 border-b border-slate-700 pb-2">Músicas Geradas:</h4>
                     {generatedTracks.map((track) => (
                         <div key={track.id} className="bg-[#1a1a1d] p-4 rounded-xl border border-slate-800 flex flex-col sm:flex-row gap-4 items-center">
                             <img src={track.imageUrl || '/default-album.png'} alt="Capa" className="w-16 h-16 rounded-lg object-cover" />
