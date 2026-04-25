@@ -29,7 +29,7 @@ export const SunoApiService = {
             },
             body: JSON.stringify({
                 ...params,
-                callBackUrl: 'https://localhost/api/suno-callback' // Dummy URL obrigatória pela API
+                callBackUrl: 'https://locutando-novo.vercel.app/'
             })
         });
 
