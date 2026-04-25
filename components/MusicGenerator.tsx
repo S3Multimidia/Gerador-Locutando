@@ -9,7 +9,7 @@ export const MusicGenerator: React.FC = () => {
     const [isInstrumental, setIsInstrumental] = useState(false);
     const [lyrics, setLyrics] = useState('');
 
-    const { generate, isLoading, error, statusText, generatedTracks, clearPolling } = useSunoGenerator();
+    const { generate, checkManually, isLoading, isChecking, error, statusText, generatedTracks, currentTaskId, clearPolling } = useSunoGenerator();
 
     useEffect(() => {
         return () => clearPolling();
@@ -167,6 +167,24 @@ export const MusicGenerator: React.FC = () => {
                     'Gerar Música'
                 )}
             </button>
+
+            {/* Manual check button - shown when polling is active */}
+            {isLoading && currentTaskId && (
+                <button
+                    onClick={checkManually}
+                    disabled={isChecking}
+                    className="w-full mt-3 py-2.5 rounded-full font-medium text-sm border border-[#8b5cf6]/50 text-[#8b5cf6] hover:bg-[#8b5cf6]/10 transition-all flex items-center justify-center"
+                >
+                    {isChecking ? (
+                        <>
+                            <span className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#8b5cf6] mr-2"></span>
+                            Verificando...
+                        </>
+                    ) : (
+                        '🔄 Verificar Resultado Agora'
+                    )}
+                </button>
+            )}
         </div>
     );
 };
