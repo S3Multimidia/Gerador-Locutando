@@ -61,19 +61,31 @@ export const useSunoGenerator = () => {
                 try {
                     const result = await SunoApiService.getGenerationStatus(taskId);
                     
-                    const status = result.data.status;
+                    // The API might return the data directly or in an array
+                    let dataObj = result.data;
+                    if (Array.isArray(result.data)) {
+                        dataObj = result.data.find((t: any) => t.taskId === taskId) || result.data[0];
+                    }
                     
-                    if (status === 'SUCCESS') {
+                    const status = dataObj?.status?.toUpperCase() || 'UNKNOWN';
+                    
+                    // If we have tracks, we can consider it success regardless of status string
+                    const hasTracks = dataObj?.response?.sunoData && dataObj.response.sunoData.length > 0;
+                    // Usually the streamAudioUrl is available first
+                    const firstTrack = hasTracks ? dataObj.response.sunoData[0] : null;
+                    const hasAudioUrl = firstTrack?.audioUrl || firstTrack?.streamAudioUrl;
+
+                    if (status === 'SUCCESS' || status === 'COMPLETED' || (hasTracks && hasAudioUrl)) {
                         clearPolling();
-                        setGeneratedTracks(result.data.response.sunoData);
+                        setGeneratedTracks(dataObj.response.sunoData);
                         setIsLoading(false);
                         setStatusText('Música gerada com sucesso!');
-                    } else if (status === 'PENDING' || status === 'TEXT_SUCCESS' || status === 'FIRST_SUCCESS') {
-                        setStatusText('Gerando música... (Pode levar até 2 minutos)');
+                    } else if (status === 'PENDING' || status === 'TEXT_SUCCESS' || status === 'FIRST_SUCCESS' || status === 'PROCESSING' || status === 'IN_PROGRESS' || status === 'UNKNOWN') {
+                        setStatusText(`Gerando... (Status: ${status})`);
                     } else {
                         // Error statuses
                         clearPolling();
-                        setError(`Erro na geração: ${status}`);
+                        setError(`Erro na geração. Status: ${status}`);
                         setIsLoading(false);
                     }
                 } catch (err: any) {
