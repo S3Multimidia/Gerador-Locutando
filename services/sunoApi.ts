@@ -34,12 +34,16 @@ export const SunoApiService = {
         });
 
         const result = await response.json();
+        console.log('[Suno] POST /generate resposta completa:', JSON.stringify(result));
         
         if (!response.ok || result.code !== 200) {
             throw new Error(result.msg || 'Erro ao iniciar geração de música');
         }
 
-        return result.data.taskId;
+        // taskId pode estar em result.data.taskId ou result.data diretamente
+        const taskId = result.data?.taskId || result.data?.task_id || result.data;
+        console.log('[Suno] taskId extraído:', taskId);
+        return taskId;
     },
 
     async getGenerationStatus(taskId: string) {
@@ -53,6 +57,7 @@ export const SunoApiService = {
         });
 
         const result = await response.json();
+        console.log('[Suno] GET /record-info resposta completa:', JSON.stringify(result));
         
         if (!response.ok || result.code !== 200) {
             throw new Error(result.msg || 'Erro ao verificar status da música');
