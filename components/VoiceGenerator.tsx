@@ -52,7 +52,6 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
 }) => {
   const { config } = useSiteConfig();
 
-  const [isSuggesting, setIsSuggesting] = useState<boolean>(false);
   const [isAnalyzingImage, setIsAnalyzingImage] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -164,34 +163,6 @@ export const VoiceGenerator: React.FC<VoiceGeneratorProps> = ({
     } finally {
       setIsAnalyzingImage(false);
       e.target.value = '';
-    }
-  };
-
-  const handleSuggestVoiceFromText = async () => {
-    if (!text.trim()) return;
-    if (isLoading || isTurboLoading) return;
-    setIsSuggesting(true);
-    try {
-      const apiKey = config?.apiKeys?.googleApiKey || getApiKey();
-      if (!apiKey) { setIsSuggesting(false); return; }
-      const ai = new GoogleGenAI({ apiKey });
-      const allowed = availableVoices.map(v => v.id).join(', ');
-      const prompt = `Considere o texto a seguir e indique apenas um id de voz dentre [${allowed}]. Responda estritamente em JSON: {\"voz_sugerida\":\"id\"}. Texto: \n\n${text}`;
-      const res = await ai.models.generateContent({ model: chatModel, contents: prompt, config: { responseMimeType: "application/json" } });
-      const raw = res.text || '';
-      let obj: any;
-      try { obj = JSON.parse(raw.trim()); } catch { setIsSuggesting(false); return; }
-      const vidRaw = obj?.voz_sugerida ?? '';
-      const vid = String(vidRaw).toLowerCase().trim();
-      let v = availableVoices.find(x => x.id.toLowerCase() === vid);
-      if (!v) v = availableVoices.find(x => x.displayName.toLowerCase() === vid);
-      if (v) {
-        setSelectedVoice(v);
-        // Index is now auto-managed by VoiceSelectorCarousel based on selectedVoice
-      }
-    } catch (e) {
-    } finally {
-      setIsSuggesting(false);
     }
   };
 
@@ -397,7 +368,7 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
         <div className="relative flex-1">
           <textarea
             id="text-input"
-            className="w-full h-full min-h-[200px] p-6 bg-slate-900/50 border border-slate-700 rounded-2xl shadow-inner text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all duration-300 resize-none text-lg leading-relaxed"
+            className="w-full h-full min-h-[350px] p-6 bg-slate-900/50 border border-slate-700 rounded-2xl shadow-inner text-slate-100 placeholder-slate-500 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-all duration-300 resize-none text-lg leading-relaxed"
             value={text}
             onChange={handleTextChange}
             placeholder="Digite ou cole seu roteiro aqui para a mágica acontecer..."
@@ -429,17 +400,6 @@ O seu output deve conter SEMPRE, independentemente do tamanho do texto original:
             </span>
           </div>
 
-          {/* Floating AI Suggestion Button */}
-          <div className="absolute bottom-4 left-4 z-10">
-            <button
-              onClick={handleSuggestVoiceFromText}
-              disabled={isSuggesting || !text.trim()}
-              className="flex items-center px-4 py-2 bg-slate-800/90 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-xl shadow-lg border border-slate-700 hover:border-indigo-500 transition-all duration-300 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none backdrop-blur-sm group/ai"
-            >
-              {isSuggesting ? <LoadingSpinner className="w-4 h-4 mr-2" /> : <span className="mr-2 text-lg group-hover/ai:animate-pulse">✨</span>}
-              <span className="text-xs font-bold uppercase tracking-wide">Sugerir Voz</span>
-            </button>
-          </div>
         </div>
       </div>
 

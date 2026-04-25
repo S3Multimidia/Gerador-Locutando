@@ -37,7 +37,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children, user, onLogout
 
                 <footer className="border-t border-slate-200 dark:border-slate-800 py-8 mt-auto transition-colors duration-300">
                     <div className="max-w-7xl mx-auto px-4 text-center text-slate-500 text-sm">
-                        <p className="text-slate-500 text-sm">© {new Date().getFullYear()} Locutando AI Auto Studio v2.7.1 - Todos os direitos reservados.</p>
+                        <p className="text-slate-500 text-sm">© {new Date().getFullYear()} Locutando AI Auto Studio v2.7.2 - Todos os direitos reservados.</p>
                     </div>
                 </footer>
 
