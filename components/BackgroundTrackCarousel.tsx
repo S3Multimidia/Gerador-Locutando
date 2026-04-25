@@ -54,8 +54,8 @@ export const BackgroundTrackCarousel: React.FC<BackgroundTrackCarouselProps> = (
                 <button
                     onClick={scrollLeft}
                     disabled={!canScrollLeft}
-                    className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shadow-lg transition-all -translate-x-3
-                        ${canScrollLeft ? 'opacity-100 hover:bg-slate-700 hover:border-indigo-500 cursor-pointer' : 'opacity-0 pointer-events-none'}`}
+                    className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-red-600 border border-red-500 flex items-center justify-center shadow-lg shadow-red-900/50 transition-all -translate-x-3
+                        ${canScrollLeft ? 'opacity-100 hover:bg-red-500 cursor-pointer' : 'opacity-0 pointer-events-none'}`}
                 >
                     <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
@@ -66,8 +66,8 @@ export const BackgroundTrackCarousel: React.FC<BackgroundTrackCarouselProps> = (
                 <button
                     onClick={scrollRight}
                     disabled={!canScrollRight}
-                    className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shadow-lg transition-all translate-x-3
-                        ${canScrollRight ? 'opacity-100 hover:bg-slate-700 hover:border-indigo-500 cursor-pointer' : 'opacity-0 pointer-events-none'}`}
+                    className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-red-600 border border-red-500 flex items-center justify-center shadow-lg shadow-red-900/50 transition-all translate-x-3
+                        ${canScrollRight ? 'opacity-100 hover:bg-red-500 cursor-pointer' : 'opacity-0 pointer-events-none'}`}
                 >
                     <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
