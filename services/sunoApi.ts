@@ -48,7 +48,7 @@ export const SunoApiService = {
 
     async getGenerationStatus(taskId: string) {
         const apiKey = await this.getApiKey();
-
+        console.log('[Suno] GET /record-info chamando com taskId:', taskId);
         const response = await fetch(`${BASE_URL}/generate/record-info?taskId=${taskId}`, {
             method: 'GET',
             headers: {

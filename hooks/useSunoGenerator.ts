@@ -98,10 +98,9 @@ export const useSunoGenerator = () => {
                     // PENDING, TEXT_SUCCESS, FIRST_SUCCESS, PROCESSING → keep polling
 
                 } catch (err: any) {
-                    console.error('[Suno Polling] erro:', err);
-                    clearPolling();
-                    setError(err.message || 'Erro ao verificar status.');
-                    setIsLoading(false);
+                    // Don't stop polling on error - just show and retry
+                    console.error('[Suno Polling] erro (vai tentar novamente):', err);
+                    setStatusText(`Verificando... (${err.message})`);
                 }
             }, 5000);
 
