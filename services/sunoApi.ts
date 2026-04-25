@@ -27,7 +27,10 @@ export const SunoApiService = {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(params)
+            body: JSON.stringify({
+                ...params,
+                callBackUrl: 'https://localhost/api/suno-callback' // Dummy URL obrigatória pela API
+            })
         });
 
         const result = await response.json();
