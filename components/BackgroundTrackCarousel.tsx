@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { TrackInfo } from '../types';
 import { PlayIcon, PauseIcon, MusicIcon, UploadIcon, CheckIcon } from './IconComponents';
 
@@ -12,6 +12,10 @@ interface BackgroundTrackCarouselProps {
     onPreview: (trackName: string) => void;
 }
 
+const CARD_WIDTH = 144; // w-36 = 144px
+const CARD_GAP = 16;    // mr-4 = 16px
+const SCROLL_STEP = (CARD_WIDTH + CARD_GAP) * 3; // scroll 3 cards at a time
+
 export const BackgroundTrackCarousel: React.FC<BackgroundTrackCarouselProps> = ({
     tracks,
     selectedTrackName,
@@ -21,36 +25,77 @@ export const BackgroundTrackCarousel: React.FC<BackgroundTrackCarouselProps> = (
     previewingTrackName,
     onPreview
 }) => {
-    // Duplicate tracks to create infinite effect
-    // We need a LOT of duplicates to ensure it overflows any screen size and loops smoothly.
-    // Duplicating 12 times ensures we have plenty of content for the 50% translation.
-    const infiniteTracks = Array(12).fill(tracks).flat();
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(true);
+
+    const updateArrows = () => {
+        const el = scrollRef.current;
+        if (!el) return;
+        setCanScrollLeft(el.scrollLeft > 4);
+        setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+    };
+
+    const scrollLeft = () => {
+        scrollRef.current?.scrollBy({ left: -SCROLL_STEP, behavior: 'smooth' });
+        setTimeout(updateArrows, 350);
+    };
+
+    const scrollRight = () => {
+        scrollRef.current?.scrollBy({ left: SCROLL_STEP, behavior: 'smooth' });
+        setTimeout(updateArrows, 350);
+    };
 
     return (
         <div>
-            {console.log("DEBUG: BackgroundTrackCarousel Rendered - VERSION NEW")}
-            {/* Carousel Container */}
-            <div className="relative group/carousel overflow-hidden w-full mask-linear-fade">
-                {/* Gradient Masks for smooth edges */}
-                <div className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-slate-900 to-transparent z-10 pointer-events-none" />
-                <div className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-slate-900 to-transparent z-10 pointer-events-none" />
-
-                <div
-                    className="flex animate-marquee hover:[animation-play-state:paused] w-max"
-                    style={{ animationDuration: '80s' }}
+            {/* Carousel + Arrows */}
+            <div className="relative group/carousel">
+                {/* Left Arrow */}
+                <button
+                    onClick={scrollLeft}
+                    disabled={!canScrollLeft}
+                    className={`absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shadow-lg transition-all -translate-x-3
+                        ${canScrollLeft ? 'opacity-100 hover:bg-slate-700 hover:border-indigo-500 cursor-pointer' : 'opacity-0 pointer-events-none'}`}
                 >
-                    {infiniteTracks.map((track, index) => {
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+
+                {/* Right Arrow */}
+                <button
+                    onClick={scrollRight}
+                    disabled={!canScrollRight}
+                    className={`absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center shadow-lg transition-all translate-x-3
+                        ${canScrollRight ? 'opacity-100 hover:bg-slate-700 hover:border-indigo-500 cursor-pointer' : 'opacity-0 pointer-events-none'}`}
+                >
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+
+                {/* Gradient Masks */}
+                <div className="absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-slate-900/80 to-transparent z-10 pointer-events-none rounded-l-lg" />
+                <div className="absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-slate-900/80 to-transparent z-10 pointer-events-none rounded-r-lg" />
+
+                {/* Scrollable Track List */}
+                <div
+                    ref={scrollRef}
+                    onScroll={updateArrows}
+                    className="flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth px-2 py-1"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                    {tracks.map((track) => {
                         const isSelected = selectedTrackName === track.name;
                         const isPreviewing = previewingTrackName === track.name && isPlayingPreview;
-                        const uniqueKey = `${track.name}-${index}`;
 
                         return (
                             <div
-                                key={uniqueKey}
+                                key={track.name}
                                 onClick={() => onSelect(track.name)}
-                                className={`flex-shrink-0 w-32 h-32 mr-4 relative rounded-lg overflow-hidden cursor-pointer transition-transform hover:scale-105 group ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-900' : ''}`}
+                                className={`flex-shrink-0 w-36 h-32 relative rounded-lg overflow-hidden cursor-pointer transition-transform hover:scale-105 group ${isSelected ? 'ring-2 ring-indigo-500 ring-offset-1 ring-offset-slate-900' : ''}`}
                             >
-                                {/* Background Gradient */}
+                                {/* Background */}
                                 <div className={`absolute inset-0 bg-gradient-to-br ${isSelected ? 'from-indigo-600 to-purple-700' : 'from-slate-800 to-slate-700'}`} />
 
                                 {/* Pattern Overlay */}
@@ -67,7 +112,6 @@ export const BackgroundTrackCarousel: React.FC<BackgroundTrackCarouselProps> = (
                                             </div>
                                         )}
                                     </div>
-
                                     <div>
                                         <h5 className="text-white font-semibold text-xs line-clamp-2 leading-tight mb-2" title={track.name}>{track.name}</h5>
                                         <button
